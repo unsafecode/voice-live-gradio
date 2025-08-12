@@ -1,57 +1,38 @@
-# Project Name
+# Voice Live API Gradio demo
 
-(short, 1-3 sentenced, description of the project)
+This project demonstrates the integration of the Voice Live API with Gradio, enabling real-time voice interaction capabilities as drop-in
+replacement over RealTime models.
+
+Adapter from [https://huggingface.co/spaces/fastrtc/talk-to-openai/blob/main/app.py](https://huggingface.co/spaces/fastrtc/talk-to-openai/blob/main/app.py)
 
 ## Features
 
-This project framework provides the following features:
-
-* Feature 1
-* Feature 2
-* ...
+- Straightforward UI thanks to Gradio
+- Real-time voice interaction via Azure AI Foundry Voice Live API
+- Drop-in replacement over OpenAI RealTime models
+- Supports both connecting to AI Foundry models and AI Foundry Agents
 
 ## Getting Started
 
 ### Prerequisites
 
-(ideally very short, if any)
-
-- OS
-- Library version
-- ...
-
-### Installation
-
-(ideally very short)
-
-- npm install [package name]
-- mvn install
-- ...
+- Python >= 3.12
+- `uv` package must be [installed](https://docs.astral.sh/uv/getting-started/installation/)
 
 ### Quickstart
-(Add steps to get up and running quickly)
 
-1. git clone [repository clone url]
-2. cd [repository name]
-3. ...
-
-
-## Demo
-
-A demo app is included to show how to use the project.
-
-To run the demo, follow these steps:
-
-(Add steps to start up the demo)
-
-1.
-2.
-3.
+1. `git clone https://github.com/Azure-Samples/voice-live-gradio`
+2. `cd voice-live-gradio`
+3. `cp .env.example .env`
+4. Fill in `.env` with your Azure AI Foundry settings
+5. `uv sync`
+6. `uv run app.py`
+7. Navigate to `http://localhost:7860`
 
 ## Resources
 
-(Any additional resources or related projects)
-
-- Link to supporting information
-- Link to similar sample
-- ...
+- [Original FastRTC sample](https://huggingface.co/spaces/fastrtc/talk-to-openai/blob/main/app.py)
+- [Voice Live Overview](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live)
+- [Connect to Foundry models](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-quickstart?tabs=windows%2Ckeyless&pivots=programming-language-python)
+- [Connect to Foundry Agents](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-agents-quickstart?tabs=windows%2Ckeyless&pivots=programming-language-python)
+- [Regional availability](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/regions?tabs=voice-live#regions)

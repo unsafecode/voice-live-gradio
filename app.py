@@ -1,14 +1,10 @@
 import asyncio
 import base64
-import json
 import logging
-from pathlib import Path
 
 import gradio as gr
 import numpy as np
 from openai import AsyncAzureOpenAI
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse
 from fastrtc import (
     AdditionalOutputs,
     AsyncStreamHandler,
@@ -22,8 +18,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-cur_dir = Path(__file__).parent
 
 SAMPLE_RATE = 24000
 
@@ -175,48 +169,8 @@ stream = Stream(
     additional_inputs=[chatbot],
     additional_outputs=[chatbot],
     additional_outputs_handler=update_chatbot,
-    # rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
-    # concurrency_limit=5 if get_space() else None,
-    # time_limit=90 if get_space() else None,
 )
-
-app = FastAPI()
-
-stream.mount(app)
-
-
-@app.get("/")
-async def _():
-    logger.info("Serving main HTML page.")
-    # rtc_config = get_twilio_turn_credentials() if get_space() else None
-    html_content = (cur_dir / "index.html").read_text()
-    # html_content = html_content.replace("__RTC_CONFIGURATION__", json.dumps(rtc_config))
-    return HTMLResponse(content=html_content)
-
-
-@app.get("/outputs")
-def _(webrtc_id: str):
-    logger.info("Starting streaming response for outputs. webrtc_id: %s", webrtc_id)
-
-    async def output_stream():
-        async for output in stream.output_stream(webrtc_id):
-            s = json.dumps(output.args[0])
-            logger.debug("Streaming output: %s", s)
-            yield f"event: output\ndata: {s}\n\n"
-
-    return StreamingResponse(output_stream(), media_type="text/event-stream")
-
 
 if __name__ == "__main__":
     logger.info("Application starting in mode: %s", config.mode)
-    if config.mode == "UI":
-        logger.info("Launching UI server.")
-        stream.ui.launch(server_port=7860, debug=False, show_error=True)
-    elif config.mode == "PHONE":
-        logger.info("Launching FastPhone server.")
-        stream.fastphone(host="0.0.0.0", port=7860)
-    else:
-        logger.info("Running FastAPI server with uvicorn.")
-        import uvicorn
-
-        uvicorn.run(app, host="0.0.0.0", port=7860)
+    stream.ui.launch(server_port=7860, debug=False, show_error=True)
