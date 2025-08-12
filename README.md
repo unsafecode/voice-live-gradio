@@ -5,6 +5,8 @@ replacement over RealTime models.
 
 Adapter from [https://huggingface.co/spaces/fastrtc/talk-to-openai/blob/main/app.py](https://huggingface.co/spaces/fastrtc/talk-to-openai/blob/main/app.py)
 
+![Basic chatbot in audio-only mode showing a sample conversation about developer jokes](image.png)
+
 ## Features
 
 - Straightforward UI thanks to Gradio
