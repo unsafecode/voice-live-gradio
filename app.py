@@ -13,14 +13,14 @@ from fastrtc import (
     AdditionalOutputs,
     AsyncStreamHandler,
     Stream,
-    get_twilio_turn_credentials,
     wait_for_item,
 )
-from gradio.utils import get_space
-from config import config, azure_ad_token_provider
+from config import config, azure_ad_token_provider, azure_agent_token_provider
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 cur_dir = Path(__file__).parent
@@ -50,16 +50,32 @@ class AzureVoiceLiveHandler(AsyncStreamHandler):
             azure_endpoint=config.azure_endpoint,
             api_version=config.azure_api_version,
             azure_ad_token_provider=azure_ad_token_provider,
-            websocket_base_url=config.azure_voice_live_endpoint
+            websocket_base_url=config.azure_voice_live_endpoint,  # NOTE: This is slightly different than standard endpoint
         )
+
+        # When targeting Foundry Agents params differ
+        if config.agent_id and config.agent_project_name:
+            agent_token = await azure_agent_token_provider()
+            extra_query = {
+                "agent-id": config.agent_id,
+                "agent-project-name": config.agent_project_name,
+                "agent-access-token": agent_token,
+            }
+        else:
+            # Basic model target
+            # Just need to redundantly specify model to map a different querystring key
+            extra_query = {
+                "model": config.azure_deployment_name,
+            }
+
+        # NOTE: this standard RealTime API connection
         async with self.client.beta.realtime.connect(
             model=config.azure_deployment_name,
-            extra_query={
-                "model": config.azure_deployment_name,  # need to redundantly specify model
-            }
+            extra_query=extra_query,
         ) as conn:
             logger.info("Connected to Azure realtime API.")
             await conn.session.update(
+                # NOTE: apply session settings as needed
                 session={
                     "turn_detection": {
                         "type": "azure_semantic_vad",
@@ -94,7 +110,10 @@ class AzureVoiceLiveHandler(AsyncStreamHandler):
                 if event.type == "input_audio_buffer.speech_started":
                     logger.info("Speech started. Clearing output queue.")
                     self.clear_queue()
-                if event.type == "conversation.item.input_audio_transcription.completed":
+                if (
+                    event.type
+                    == "conversation.item.input_audio_transcription.completed"
+                ):
                     logger.info("Transcription completed: %s", event.transcript)
                     await self.output_queue.put(
                         AdditionalOutputs({"role": "user", "content": event.transcript})
@@ -102,7 +121,9 @@ class AzureVoiceLiveHandler(AsyncStreamHandler):
                 if event.type == "response.audio_transcript.done":
                     logger.info("Assistant response completed: %s", event.transcript)
                     await self.output_queue.put(
-                        AdditionalOutputs({"role": "assistant", "content": event.transcript})
+                        AdditionalOutputs(
+                            {"role": "assistant", "content": event.transcript}
+                        )
                     )
                 if event.type == "response.audio.delta":
                     logger.debug("Received audio delta event.")
@@ -154,9 +175,9 @@ stream = Stream(
     additional_inputs=[chatbot],
     additional_outputs=[chatbot],
     additional_outputs_handler=update_chatbot,
-    rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
-    concurrency_limit=5 if get_space() else None,
-    time_limit=90 if get_space() else None,
+    # rtc_configuration=get_twilio_turn_credentials() if get_space() else None,
+    # concurrency_limit=5 if get_space() else None,
+    # time_limit=90 if get_space() else None,
 )
 
 app = FastAPI()
@@ -167,9 +188,9 @@ stream.mount(app)
 @app.get("/")
 async def _():
     logger.info("Serving main HTML page.")
-    rtc_config = get_twilio_turn_credentials() if get_space() else None
+    # rtc_config = get_twilio_turn_credentials() if get_space() else None
     html_content = (cur_dir / "index.html").read_text()
-    html_content = html_content.replace("__RTC_CONFIGURATION__", json.dumps(rtc_config))
+    # html_content = html_content.replace("__RTC_CONFIGURATION__", json.dumps(rtc_config))
     return HTMLResponse(content=html_content)
 
 
@@ -178,8 +199,6 @@ def _(webrtc_id: str):
     logger.info("Starting streaming response for outputs. webrtc_id: %s", webrtc_id)
 
     async def output_stream():
-        import json
-
         async for output in stream.output_stream(webrtc_id):
             s = json.dumps(output.args[0])
             logger.debug("Streaming output: %s", s)
