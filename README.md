@@ -139,6 +139,24 @@ Everything is **Entra ID** via `azure.identity.aio.DefaultAzureCredential`:
 
 No API keys are present in `.env.example` or anywhere in the source.
 
+## Benchmark
+
+Want real numbers? `benchmark/run.py` runs a **scenario matrix**
+(mode × model) × `--iterations` × `--turns` over the *exact same*
+conversation and emits a markdown report with p50 / p95 / CoV% plus
+per-turn WAVs. The default matrix exercises the Realtime baseline
+**and** Voice Live's hosted realtime *and* text-model flavours so you
+can see the TTS-overlay tax in one chart.
+
+```bash
+uv run python -m benchmark.run                       # default 5-scenario matrix, 3 iter × 4 turns
+uv run python -m benchmark.run --iterations 5        # tighter PAYG noise absorption
+uv run python -m benchmark.run --scenarios voicelive:gpt-5-mini voicelive:gpt-4o-mini
+```
+
+See [`benchmark/README.md`](benchmark/README.md) for the full matrix
+syntax, output layout, and caveats.
+
 ## Resources
 
 - [Voice Live overview](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live)

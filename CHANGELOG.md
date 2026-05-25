@@ -8,6 +8,13 @@
   `app_agent.py`) that share **all** plumbing via the new
   `voicelive_demo/` package — the three files differ *only* in the
   connection-setup block, which is the actual punchline of the demo.
+* **Benchmark harness** (`benchmark/run.py`) — runs a scenario matrix
+  (mode × model) × `--iterations` × `--turns` to absorb PAYG noise.
+  Default matrix covers the Realtime baseline + Voice Live's hosted
+  realtime *and* text-model flavours (`gpt-realtime`,
+  `gpt-realtime-mini`, `gpt-5-mini`, `gpt-4o-mini`). Emits
+  `metrics.json` + `comparison.md` (headline aggregates, full stats
+  with p50/p95/CoV%, per-iteration drill-down) + per-turn WAVs.
 * `app.py` is now a thin dispatcher selecting one of the three based on
   the `MODE` env var (`realtime` | `voicelive` | `agent`).
 * New Gradio Blocks UI: header MODE/MODEL/ENDPOINT chip, live status
