@@ -394,104 +394,171 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 .vl-button-row { gap: 8px !important; margin-top: 8px !important; }
 .vl-button-row > button, .vl-button-row .gr-button { flex: 1 !important; min-width: 0 !important; }
 
-/* ── Diff renderer ─────────────────────────────────────────────────── */
-.diff-section { margin: 0 0 32px 0; }
-.diff-section-title {
+/* ── Switch-diff (minimal view) ────────────────────────────────────── */
+.vlx-root { display: flex; flex-direction: column; gap: 28px; }
+
+.vlx-section {
+    background: var(--vl-surface);
+    border: 1px solid var(--vl-border);
+    border-radius: 12px;
+    padding: 20px 22px 22px;
+    box-shadow: var(--vl-shadow);
+}
+
+.vlx-section-head {
     display: flex; align-items: center; gap: 12px;
-    font-size: 16px; font-weight: 600; color: var(--vl-text);
-    margin: 0 0 8px 0;
+    margin: 0 0 6px 0;
 }
-.diff-step {
+.vlx-step {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; border-radius: 50%;
-    background: var(--vl-accent); color: white;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--vl-accent); color: #fff;
     font-size: 13px; font-weight: 700;
+    flex: 0 0 auto;
 }
-.diff-section-lede {
+.vlx-section-title {
+    font-size: 16px; font-weight: 600; color: var(--vl-text);
+    letter-spacing: -0.005em;
+}
+.vlx-lede {
     color: var(--vl-text-muted); font-size: 13.5px; line-height: 1.55;
     margin: 0 0 14px 0;
 }
-.diff-section-lede code {
+.vlx-lede code {
     background: var(--vl-surface-soft); padding: 1px 6px; border-radius: 4px;
     font-family: var(--vl-mono); font-size: 12.5px;
     color: var(--vl-text);
     border: 1px solid var(--vl-border);
 }
 
-.diff-container {
+.vlx-summary {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin: 0 0 14px 0;
+}
+.vlx-summary-chip {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--vl-border);
+    background: var(--vl-surface-soft);
+    color: var(--vl-text-muted);
+    font-size: 12px; font-weight: 600;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+.vlx-summary-chip-add {
+    color: var(--vl-diff-add-sign-tx);
+    background: var(--vl-diff-add-bg);
+    border-color: color-mix(in srgb, var(--vl-diff-add-sign-tx) 30%, transparent);
+}
+.vlx-summary-chip-del {
+    color: var(--vl-diff-del-sign-tx);
+    background: var(--vl-diff-del-bg);
+    border-color: color-mix(in srgb, var(--vl-diff-del-sign-tx) 30%, transparent);
+}
+.vlx-summary-chip-info {
+    color: var(--vl-accent);
+    background: color-mix(in srgb, var(--vl-accent) 8%, transparent);
+    border-color: color-mix(in srgb, var(--vl-accent) 25%, transparent);
+}
+
+.vlx-panel {
     border: 1px solid var(--vl-border-strong);
     border-radius: 8px;
     overflow: hidden;
     background: var(--vl-surface);
-    font-family: var(--vl-mono);
-    font-size: 12.5px;
-    line-height: 1.55;
-    color: var(--vl-diff-code-tx);
+    margin-top: 10px;
 }
-.diff-header {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+.vlx-panel + .vlx-panel { margin-top: 14px; }
+.vlx-panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 8px 14px;
     background: var(--vl-diff-header-bg);
     border-bottom: 1px solid var(--vl-border-strong);
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: 12.5px; font-weight: 600;
+}
+.vlx-fn {
+    font-family: var(--vl-mono);
+    font-size: 12.5px;
     color: var(--vl-text);
+    font-weight: 600;
+    background: transparent;
+    padding: 0;
 }
-.diff-header-side { padding: 10px 14px; }
-.diff-header-side + .diff-header-side { border-left: 1px solid var(--vl-border-strong); }
-.diff-body { max-height: 540px; overflow: auto; background: var(--vl-surface); }
-.diff-row {
-    display: grid;
-    grid-template-columns: 44px 22px 1fr 44px 22px 1fr;
-    border-top: 1px solid var(--vl-diff-row-border);
+.vlx-stats { display: inline-flex; gap: 6px; }
+.vlx-chip {
+    display: inline-flex; align-items: center;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-family: var(--vl-mono);
+    font-size: 11.5px; font-weight: 700;
+    line-height: 1.5;
 }
-.diff-row:first-child { border-top: none; }
-.diff-lno {
-    padding: 1px 8px; text-align: right;
-    color: var(--vl-diff-lno-text); user-select: none;
-    border-right: 1px solid var(--vl-diff-row-border);
-    background: var(--vl-diff-lno-bg);
-    font-size: 11.5px;
+.vlx-chip-add {
+    color: var(--vl-diff-add-sign-tx);
+    background: var(--vl-diff-add-sign-bg);
 }
-.diff-sign {
-    padding: 1px 0; text-align: center;
-    color: var(--vl-text-muted); user-select: none;
-    font-weight: 600; background: var(--vl-surface);
+.vlx-chip-del {
+    color: var(--vl-diff-del-sign-tx);
+    background: var(--vl-diff-del-sign-bg);
 }
-.diff-code {
-    padding: 1px 10px;
-    white-space: pre-wrap;
-    word-break: break-word;
+
+.vlx-diff {
+    font-family: var(--vl-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
     color: var(--vl-diff-code-tx);
     background: var(--vl-surface);
+    overflow-x: auto;
 }
-.diff-equal   > .diff-code { background: var(--vl-surface); }
-.diff-replace > .diff-code:nth-of-type(1) { background: var(--vl-diff-del-bg); }
-.diff-replace > .diff-code:nth-of-type(2) { background: var(--vl-diff-add-bg); }
-.diff-delete  > .diff-code:nth-of-type(1) { background: var(--vl-diff-del-bg); }
-.diff-delete  > .diff-code:nth-of-type(2) { background: var(--vl-surface); }
-.diff-insert  > .diff-code:nth-of-type(1) { background: var(--vl-surface); }
-.diff-insert  > .diff-code:nth-of-type(2) { background: var(--vl-diff-add-bg); }
-
-.diff-sign-\\+ { color: var(--vl-diff-add-sign-tx); background: var(--vl-diff-add-sign-bg); }
-.diff-sign-\\− { color: var(--vl-diff-del-sign-tx); background: var(--vl-diff-del-sign-bg); }
-
-.diff-hunk-header {
-    background: var(--vl-diff-hunk-bg);
-    color: var(--vl-text-muted);
-    padding: 6px 14px;
+.vlx-row {
+    display: grid;
+    grid-template-columns: 44px 44px 24px 1fr;
+    align-items: stretch;
+    min-height: 22px;
+}
+.vlx-lno {
+    padding: 0 8px; text-align: right;
+    color: var(--vl-diff-lno-text); user-select: none;
+    background: var(--vl-diff-lno-bg);
     font-size: 11.5px;
-    border-top: 1px solid var(--vl-border-strong);
-    border-bottom: 1px solid var(--vl-border);
+    border-right: 1px solid var(--vl-diff-row-border);
+    display: flex; align-items: center; justify-content: flex-end;
 }
-.diff-hunk-header:first-child { border-top: none; }
-.diff-footer {
-    padding: 8px 14px; background: var(--vl-surface-soft);
-    color: var(--vl-text-faint); font-size: 11.5px;
-    border-top: 1px solid var(--vl-border);
+.vlx-sign {
+    padding: 0; text-align: center;
+    color: var(--vl-text-muted); user-select: none;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+}
+.vlx-code {
+    padding: 0 12px;
+    white-space: pre;
+    color: var(--vl-diff-code-tx);
+    display: flex; align-items: center;
+}
+.vlx-ctx > .vlx-code,
+.vlx-ctx > .vlx-sign { background: var(--vl-surface); }
+.vlx-add > .vlx-code { background: var(--vl-diff-add-bg); }
+.vlx-add > .vlx-sign { background: var(--vl-diff-add-sign-bg); color: var(--vl-diff-add-sign-tx); }
+.vlx-del > .vlx-code { background: var(--vl-diff-del-bg); }
+.vlx-del > .vlx-sign { background: var(--vl-diff-del-sign-bg); color: var(--vl-diff-del-sign-tx); }
+
+.vlx-gap {
+    grid-template-columns: 1fr;
+    min-height: 8px;
+    background: var(--vl-diff-hunk-bg);
+    border-top: 1px solid var(--vl-diff-row-border);
+    border-bottom: 1px solid var(--vl-diff-row-border);
+}
+.vlx-gap .vlx-spacer { display: block; }
+
+.vlx-diff-empty {
+    padding: 20px; text-align: center;
+    color: var(--vl-text-faint);
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
 }
-.diff-empty { padding: 20px; text-align: center; color: var(--vl-text-faint); }
 """
 
 
@@ -608,15 +675,16 @@ def build_ui(
                 reset_btn.click(fn=_reset_conversation, inputs=None, outputs=[chatbot, status_html])
 
             with gr.Tab("Switch diff"):
-                gr.Markdown(
-                    """
-### How trivial is the switch?
-
-Three sibling app files at the repo root, one per rung. The shared
-plumbing (UI, FastRTC pipe, audio queue, transcript fan-out) lives in
-`voicelive_demo/` — so what you see below is **the only thing that
-changes per rung**.
-                    """
+                gr.HTML(
+                    '<div class="vl-section-title" style="margin:8px 0 4px;">How trivial is the switch?</div>'
+                    '<p style="margin:0 0 16px 0;color:var(--vl-text-muted);font-size:13.5px;line-height:1.55;">'
+                    "Three sibling app files at the repo root, one per rung. "
+                    "All shared plumbing (UI, FastRTC pipe, audio queue, transcript fan-out) "
+                    "lives in <code style=\"font-family:var(--vl-mono);background:var(--vl-surface-soft);"
+                    "padding:1px 6px;border-radius:4px;border:1px solid var(--vl-border);font-size:12.5px;\">"
+                    "voicelive_demo/</code>. Below is the entire delta — only the functions "
+                    "that actually change between rungs."
+                    "</p>"
                 )
                 gr.HTML(render_diffs_html())
 

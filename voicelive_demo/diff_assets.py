@@ -1,165 +1,242 @@
-"""Render side-by-side diffs between the three rung apps for the UI's diff tab.
+"""Render minimal, focused diffs for the UI's "Switch diff" tab.
 
-We roll our own diff renderer — `difflib.HtmlDiff` produces a 1998-era table
-that's not worth styling around. This one emits a CSS-Grid layout that looks
-like GitHub's split view: line numbers, ± gutter, color-coded rows, only the
-changed hunks plus 3 lines of context.
+The whole point of this demo is *how few lines change* when you swap
+Azure OpenAI Realtime → Azure Voice Live → Voice Live + Foundry Agent.
+The full file diff buries that signal in docstring/import noise, so we
+extract only the functions that actually carry the change
+(``connect_factory`` always; ``make_session`` only if it differs) and
+render a compact GitHub-style **unified** diff.
 """
 from __future__ import annotations
 
+import ast
 import difflib
 import html
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CONTEXT_LINES = 3
+CONTEXT_LINES = 2
+
+# Functions we surface, in order. If a function is missing from a file we
+# just skip it — keeps the page robust when files are refactored.
+FOCUS_FUNCTIONS = ("connect_factory", "make_session")
 
 
-def _read(path: Path) -> list[str]:
+# ── helpers ───────────────────────────────────────────────────────────
+
+def _read(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8").splitlines(keepends=False)
+        return path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return [f"# {path.name} not found"]
+        return ""
 
 
 def _esc(s: str) -> str:
-    return html.escape(s).replace(" ", "&nbsp;")
+    return html.escape(s).replace("\t", "    ")
 
 
-def _render_side_by_side(left_lines: list[str], right_lines: list[str],
-                          left_label: str, right_label: str) -> str:
-    """Render two file versions as a side-by-side diff (GitHub-style split view)."""
-    sm = difflib.SequenceMatcher(a=left_lines, b=right_lines, autojunk=False)
-    rows: list[str] = []
+def _extract_function(source: str, name: str) -> list[str] | None:
+    """Return the source lines of the top-level ``def NAME`` in ``source``.
 
-    def _row(kind: str, ln_l: str, line_l: str, sign_l: str,
-              ln_r: str, line_r: str, sign_r: str) -> str:
-        return (
-            f'<div class="diff-row diff-{kind}">'
-            f'<div class="diff-lno">{ln_l}</div>'
-            f'<div class="diff-sign diff-sign-{sign_l or "ctx"}">{sign_l or "&nbsp;"}</div>'
-            f'<div class="diff-code">{_esc(line_l) if line_l else "&nbsp;"}</div>'
-            f'<div class="diff-lno">{ln_r}</div>'
-            f'<div class="diff-sign diff-sign-{sign_r or "ctx"}">{sign_r or "&nbsp;"}</div>'
-            f'<div class="diff-code">{_esc(line_r) if line_r else "&nbsp;"}</div>'
-            f'</div>'
-        )
+    Uses ``ast`` to find the function span (handles multi-line signatures,
+    decorators, async defs) and slices the original text so we keep the
+    exact formatting the user wrote.
+    """
+    if not source:
+        return None
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            start = (node.decorator_list[0].lineno if node.decorator_list else node.lineno) - 1
+            end = (node.end_lineno or node.lineno)
+            return source.splitlines()[start:end]
+    return None
 
-    def _hunk_header(i1: int, i2: int, j1: int, j2: int) -> str:
-        return (
-            f'<div class="diff-hunk-header">'
-            f'@@ -{i1 + 1},{i2 - i1} +{j1 + 1},{j2 - j1} @@'
-            f'</div>'
-        )
 
+# ── diff rendering ────────────────────────────────────────────────────
+
+@dataclass
+class DiffStats:
+    added: int
+    removed: int
+    hunks: int
+
+    @property
+    def changed_lines(self) -> int:
+        return self.added + self.removed
+
+
+def _compute_stats(left: list[str], right: list[str]) -> DiffStats:
+    sm = difflib.SequenceMatcher(a=left, b=right, autojunk=False)
+    added = removed = 0
+    groups = list(sm.get_grouped_opcodes(n=CONTEXT_LINES))
+    for group in groups:
+        for tag, i1, i2, j1, j2 in group:
+            if tag in ("replace", "delete"):
+                removed += i2 - i1
+            if tag in ("replace", "insert"):
+                added += j2 - j1
+    return DiffStats(added=added, removed=removed, hunks=len(groups))
+
+
+def _render_unified(left: list[str], right: list[str]) -> str:
+    """Render a compact, single-column unified diff (GitHub-style)."""
+    sm = difflib.SequenceMatcher(a=left, b=right, autojunk=False)
     groups = list(sm.get_grouped_opcodes(n=CONTEXT_LINES))
     if not groups:
+        return '<div class="vlx-diff-empty">No changes in this function.</div>'
+
+    rows: list[str] = []
+
+    def _row(kind: str, sign: str, ln_l: str, ln_r: str, code: str) -> str:
         return (
-            f'<div class="diff-container">'
-            f'<div class="diff-header">'
-            f'<div class="diff-header-side">{html.escape(left_label)}</div>'
-            f'<div class="diff-header-side">{html.escape(right_label)}</div>'
-            f'</div>'
-            f'<div class="diff-empty">Files are identical.</div>'
+            f'<div class="vlx-row vlx-{kind}">'
+            f'<span class="vlx-lno vlx-lno-l">{ln_l}</span>'
+            f'<span class="vlx-lno vlx-lno-r">{ln_r}</span>'
+            f'<span class="vlx-sign">{sign or "&nbsp;"}</span>'
+            f'<span class="vlx-code">{_esc(code) if code else "&nbsp;"}</span>'
             f'</div>'
         )
 
-    for group in groups:
-        first_op = group[0]
-        last_op = group[-1]
-        rows.append(_hunk_header(first_op[1], last_op[2], first_op[3], last_op[4]))
-
+    for gi, group in enumerate(groups):
+        if gi > 0:
+            rows.append('<div class="vlx-row vlx-gap"><span class="vlx-spacer"></span></div>')
         for tag, i1, i2, j1, j2 in group:
             if tag == "equal":
                 for k in range(i2 - i1):
-                    rows.append(_row(
-                        "equal",
-                        str(i1 + k + 1), left_lines[i1 + k], "",
-                        str(j1 + k + 1), right_lines[j1 + k], "",
-                    ))
+                    rows.append(_row("ctx", "", str(i1 + k + 1), str(j1 + k + 1), left[i1 + k]))
             elif tag == "replace":
-                left_chunk = left_lines[i1:i2]
-                right_chunk = right_lines[j1:j2]
-                max_n = max(len(left_chunk), len(right_chunk))
-                for k in range(max_n):
-                    has_l = k < len(left_chunk)
-                    has_r = k < len(right_chunk)
-                    rows.append(_row(
-                        "replace",
-                        str(i1 + k + 1) if has_l else "", left_chunk[k] if has_l else "", "−" if has_l else "",
-                        str(j1 + k + 1) if has_r else "", right_chunk[k] if has_r else "", "+" if has_r else "",
-                    ))
+                for k in range(i2 - i1):
+                    rows.append(_row("del", "−", str(i1 + k + 1), "", left[i1 + k]))
+                for k in range(j2 - j1):
+                    rows.append(_row("add", "+", "", str(j1 + k + 1), right[j1 + k]))
             elif tag == "delete":
                 for k in range(i2 - i1):
-                    rows.append(_row(
-                        "delete",
-                        str(i1 + k + 1), left_lines[i1 + k], "−",
-                        "", "", "",
-                    ))
+                    rows.append(_row("del", "−", str(i1 + k + 1), "", left[i1 + k]))
             elif tag == "insert":
                 for k in range(j2 - j1):
-                    rows.append(_row(
-                        "insert",
-                        "", "", "",
-                        str(j1 + k + 1), right_lines[j1 + k], "+",
-                    ))
+                    rows.append(_row("add", "+", "", str(j1 + k + 1), right[j1 + k]))
 
-    n_changes = sum(1 for tag, *_ in (op for grp in groups for op in grp) if tag != "equal")
+    return f'<div class="vlx-diff">{"".join(rows)}</div>'
+
+
+def _render_focus_panel(
+    fn_name: str,
+    left_source: str,
+    right_source: str,
+) -> str | None:
+    """One ``<div class="vlx-panel">`` per changed function (or None if unchanged)."""
+    left = _extract_function(left_source, fn_name)
+    right = _extract_function(right_source, fn_name)
+    if left is None or right is None or left == right:
+        return None
+
+    stats = _compute_stats(left, right)
+    chips = (
+        f'<span class="vlx-chip vlx-chip-add">+{stats.added}</span>'
+        f'<span class="vlx-chip vlx-chip-del">−{stats.removed}</span>'
+    )
     return (
-        f'<div class="diff-container">'
-        f'<div class="diff-header">'
-        f'<div class="diff-header-side">{html.escape(left_label)}</div>'
-        f'<div class="diff-header-side">{html.escape(right_label)}</div>'
+        '<div class="vlx-panel">'
+        f'<div class="vlx-panel-head">'
+        f'<code class="vlx-fn">{html.escape(fn_name)}()</code>'
+        f'<span class="vlx-stats">{chips}</span>'
         f'</div>'
-        f'<div class="diff-body">{"".join(rows)}</div>'
-        f'<div class="diff-footer">{n_changes} change hunk(s) · {CONTEXT_LINES} lines of context</div>'
-        f'</div>'
+        f'{_render_unified(left, right)}'
+        '</div>'
     )
 
 
+def _summary_chips(
+    left_source: str,
+    right_source: str,
+    extra: list[str] | None = None,
+) -> str:
+    """Top-of-section chip row: total lines changed across all focus fns."""
+    total_added = total_removed = 0
+    fns_touched: list[str] = []
+    for fn in FOCUS_FUNCTIONS:
+        left = _extract_function(left_source, fn)
+        right = _extract_function(right_source, fn)
+        if left is None or right is None or left == right:
+            continue
+        s = _compute_stats(left, right)
+        total_added += s.added
+        total_removed += s.removed
+        fns_touched.append(fn)
+
+    chips = [
+        f'<span class="vlx-summary-chip vlx-summary-chip-add">+{total_added} lines</span>',
+        f'<span class="vlx-summary-chip vlx-summary-chip-del">−{total_removed} lines</span>',
+        f'<span class="vlx-summary-chip">{len(fns_touched)} function{"s" if len(fns_touched) != 1 else ""} touched</span>',
+    ]
+    for e in (extra or []):
+        chips.append(f'<span class="vlx-summary-chip vlx-summary-chip-info">{e}</span>')
+    return f'<div class="vlx-summary">{"".join(chips)}</div>'
+
+
+# ── top-level entry point ─────────────────────────────────────────────
+
 def render_diffs_html() -> str:
-    """Render the two key diffs and a short explainer."""
+    """Render the two key transitions as compact, minimal-noise diff cards."""
     rt = _read(REPO_ROOT / "app_realtime.py")
     vl = _read(REPO_ROOT / "app_voicelive.py")
     ag = _read(REPO_ROOT / "app_agent.py")
 
-    diff_rt_vl = _render_side_by_side(
-        rt, vl,
-        "app_realtime.py · rung 1 — Azure OpenAI Realtime",
-        "app_voicelive.py · rung 2 — Azure Voice Live",
+    def _section(
+        step: str,
+        title: str,
+        lede: str,
+        left_source: str,
+        right_source: str,
+        extra_chips: list[str],
+    ) -> str:
+        panels = [
+            _render_focus_panel(fn, left_source, right_source)
+            for fn in FOCUS_FUNCTIONS
+        ]
+        panels_html = "".join(p for p in panels if p)
+        if not panels_html:
+            panels_html = '<div class="vlx-diff-empty">No code changes in the focus functions.</div>'
+        return (
+            '<div class="vlx-section">'
+            f'<div class="vlx-section-head">'
+            f'<span class="vlx-step">{step}</span>'
+            f'<span class="vlx-section-title">{title}</span>'
+            f'</div>'
+            f'<p class="vlx-lede">{lede}</p>'
+            f'{_summary_chips(left_source, right_source, extra=extra_chips)}'
+            f'{panels_html}'
+            '</div>'
+        )
+
+    section1 = _section(
+        step="1",
+        title="Azure OpenAI Realtime → Azure Voice Live",
+        lede=(
+            "Same <code>AsyncAzureOpenAI</code> client, same "
+            "<code>client.realtime.connect()</code> call. Three knobs change "
+            "to point the SDK at the GA Voice Live endpoint."
+        ),
+        left_source=rt,
+        right_source=vl,
+        extra_chips=["Same SDK", "Same call shape"],
     )
-    diff_vl_ag = _render_side_by_side(
-        vl, ag,
-        "app_voicelive.py · rung 2 — Azure Voice Live",
-        "app_agent.py · rung 3 — Voice Live + Foundry Agent",
+    section2 = _section(
+        step="2",
+        title="Voice Live → Voice Live + Foundry Agent",
+        lede=(
+            "Same <code>connect_factory</code>. The <code>extra_query</code> "
+            "dict is swapped: the model id is replaced by an agent id, "
+            "project name, and short-lived agent access token."
+        ),
+        left_source=vl,
+        right_source=ag,
+        extra_chips=["Same SDK", "Agent owns instructions"],
     )
 
-    return f"""
-<div class="diff-section">
-  <div class="diff-section-title">
-    <span class="diff-step">1</span>
-    <span>Realtime → Voice Live</span>
-  </div>
-  <p class="diff-section-lede">
-    The headline diff. <b>Three small changes</b> to the same
-    <code>AsyncAzureOpenAI</code> client: a <code>websocket_base_url</code>
-    kwarg, a different api-version, and one <code>extra_query</code> key
-    (<code>model=</code>) because Voice Live keys off
-    <code>&amp;model=</code> not <code>&amp;deployment=</code>.
-  </p>
-  {diff_rt_vl}
-</div>
-
-<div class="diff-section">
-  <div class="diff-section-title">
-    <span class="diff-step">2</span>
-    <span>Voice Live → Voice Live + Foundry Agent</span>
-  </div>
-  <p class="diff-section-lede">
-    Same client, same <code>connect()</code> call. The only new thing is
-    the <code>extra_query</code> dict that routes traffic to a hosted
-    Foundry Agent instead of a raw model.
-  </p>
-  {diff_vl_ag}
-</div>
-"""
+    return f'<div class="vlx-root">{section1}{section2}</div>'
