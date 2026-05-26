@@ -1,17 +1,18 @@
-"""Render the side-by-side diffs between the three rung apps for the UI's "View the diff" tab."""
+"""Render side-by-side diffs between the three rung apps for the UI's diff tab.
+
+We roll our own diff renderer — `difflib.HtmlDiff` produces a 1998-era table
+that's not worth styling around. This one emits a CSS-Grid layout that looks
+like GitHub's split view: line numbers, ± gutter, color-coded rows, only the
+changed hunks plus 3 lines of context.
+"""
 from __future__ import annotations
 
 import difflib
-import re
+import html
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-RUNGS = [
-    ("app_realtime.py",  "rung 1 — Azure OpenAI Realtime"),
-    ("app_voicelive.py", "rung 2 — Azure Voice Live (the punchline)"),
-    ("app_agent.py",     "rung 3 — Voice Live + Foundry Agent"),
-]
+CONTEXT_LINES = 3
 
 
 def _read(path: Path) -> list[str]:
@@ -21,62 +22,144 @@ def _read(path: Path) -> list[str]:
         return [f"# {path.name} not found"]
 
 
-def _html_diff(left: tuple[str, str], right: tuple[str, str]) -> str:
-    left_name, left_label = left
-    right_name, right_label = right
-    left_lines = _read(REPO_ROOT / left_name)
-    right_lines = _read(REPO_ROOT / right_name)
-    differ = difflib.HtmlDiff(wrapcolumn=72, tabsize=4)
-    table = differ.make_table(
-        left_lines, right_lines,
-        fromdesc=left_label, todesc=right_label,
-        context=True, numlines=1,
+def _esc(s: str) -> str:
+    return html.escape(s).replace(" ", "&nbsp;")
+
+
+def _render_side_by_side(left_lines: list[str], right_lines: list[str],
+                          left_label: str, right_label: str) -> str:
+    """Render two file versions as a side-by-side diff (GitHub-style split view)."""
+    sm = difflib.SequenceMatcher(a=left_lines, b=right_lines, autojunk=False)
+    rows: list[str] = []
+
+    def _row(kind: str, ln_l: str, line_l: str, sign_l: str,
+              ln_r: str, line_r: str, sign_r: str) -> str:
+        return (
+            f'<div class="diff-row diff-{kind}">'
+            f'<div class="diff-lno">{ln_l}</div>'
+            f'<div class="diff-sign diff-sign-{sign_l or "ctx"}">{sign_l or "&nbsp;"}</div>'
+            f'<div class="diff-code">{_esc(line_l) if line_l else "&nbsp;"}</div>'
+            f'<div class="diff-lno">{ln_r}</div>'
+            f'<div class="diff-sign diff-sign-{sign_r or "ctx"}">{sign_r or "&nbsp;"}</div>'
+            f'<div class="diff-code">{_esc(line_r) if line_r else "&nbsp;"}</div>'
+            f'</div>'
+        )
+
+    def _hunk_header(i1: int, i2: int, j1: int, j2: int) -> str:
+        return (
+            f'<div class="diff-hunk-header">'
+            f'@@ -{i1 + 1},{i2 - i1} +{j1 + 1},{j2 - j1} @@'
+            f'</div>'
+        )
+
+    groups = list(sm.get_grouped_opcodes(n=CONTEXT_LINES))
+    if not groups:
+        return (
+            f'<div class="diff-container">'
+            f'<div class="diff-header">'
+            f'<div class="diff-header-side">{html.escape(left_label)}</div>'
+            f'<div class="diff-header-side">{html.escape(right_label)}</div>'
+            f'</div>'
+            f'<div class="diff-empty">Files are identical.</div>'
+            f'</div>'
+        )
+
+    for group in groups:
+        first_op = group[0]
+        last_op = group[-1]
+        rows.append(_hunk_header(first_op[1], last_op[2], first_op[3], last_op[4]))
+
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                for k in range(i2 - i1):
+                    rows.append(_row(
+                        "equal",
+                        str(i1 + k + 1), left_lines[i1 + k], "",
+                        str(j1 + k + 1), right_lines[j1 + k], "",
+                    ))
+            elif tag == "replace":
+                left_chunk = left_lines[i1:i2]
+                right_chunk = right_lines[j1:j2]
+                max_n = max(len(left_chunk), len(right_chunk))
+                for k in range(max_n):
+                    has_l = k < len(left_chunk)
+                    has_r = k < len(right_chunk)
+                    rows.append(_row(
+                        "replace",
+                        str(i1 + k + 1) if has_l else "", left_chunk[k] if has_l else "", "−" if has_l else "",
+                        str(j1 + k + 1) if has_r else "", right_chunk[k] if has_r else "", "+" if has_r else "",
+                    ))
+            elif tag == "delete":
+                for k in range(i2 - i1):
+                    rows.append(_row(
+                        "delete",
+                        str(i1 + k + 1), left_lines[i1 + k], "−",
+                        "", "", "",
+                    ))
+            elif tag == "insert":
+                for k in range(j2 - j1):
+                    rows.append(_row(
+                        "insert",
+                        "", "", "",
+                        str(j1 + k + 1), right_lines[j1 + k], "+",
+                    ))
+
+    n_changes = sum(1 for tag, *_ in (op for grp in groups for op in grp) if tag != "equal")
+    return (
+        f'<div class="diff-container">'
+        f'<div class="diff-header">'
+        f'<div class="diff-header-side">{html.escape(left_label)}</div>'
+        f'<div class="diff-header-side">{html.escape(right_label)}</div>'
+        f'</div>'
+        f'<div class="diff-body">{"".join(rows)}</div>'
+        f'<div class="diff-footer">{n_changes} change hunk(s) · {CONTEXT_LINES} lines of context</div>'
+        f'</div>'
     )
-    # difflib's default HTML uses inline class names that look terrible without their stylesheet;
-    # inject a compact stylesheet so the diff is readable in Gradio.
-    style = """
-<style>
-.diff_table { font-family: 'SFMono-Regular','Consolas','Liberation Mono',Menlo,monospace;
-              font-size: 12px; border-collapse: collapse; width: 100%; margin: 6px 0 24px; }
-.diff_table td { padding: 2px 6px; vertical-align: top; white-space: pre-wrap; word-break: break-all; }
-.diff_header { background: #eef; color: #333; font-weight: 600; }
-.diff_next { background: #f6f8fa; color: #888; }
-.diff_add { background: #d4edda; color: #155724; }
-.diff_chg { background: #fff3cd; color: #856404; }
-.diff_sub { background: #f8d7da; color: #721c24; }
-table.diff thead th { background: #0078D4; color: white; padding: 6px; }
-</style>
-"""
-    return style + table
 
 
 def render_diffs_html() -> str:
     """Render the two key diffs and a short explainer."""
-    diff_rt_vl = _html_diff(("app_realtime.py", "rung 1 — Azure OpenAI Realtime"),
-                            ("app_voicelive.py", "rung 2 — Azure Voice Live"))
-    diff_vl_ag = _html_diff(("app_voicelive.py", "rung 2 — Azure Voice Live"),
-                            ("app_agent.py",    "rung 3 — Voice Live + Foundry Agent"))
+    rt = _read(REPO_ROOT / "app_realtime.py")
+    vl = _read(REPO_ROOT / "app_voicelive.py")
+    ag = _read(REPO_ROOT / "app_agent.py")
+
+    diff_rt_vl = _render_side_by_side(
+        rt, vl,
+        "app_realtime.py · rung 1 — Azure OpenAI Realtime",
+        "app_voicelive.py · rung 2 — Azure Voice Live",
+    )
+    diff_vl_ag = _render_side_by_side(
+        vl, ag,
+        "app_voicelive.py · rung 2 — Azure Voice Live",
+        "app_agent.py · rung 3 — Voice Live + Foundry Agent",
+    )
 
     return f"""
-<h3>① Azure OpenAI Realtime → Azure Voice Live</h3>
-<p style="color:#555;">The headline diff. <b>Three small changes</b> to the same <code>AsyncAzureOpenAI</code> client:
-the <code>websocket_base_url</code> kwarg, the api-version (Realtime is still on preview because
-<code>openai 2.x</code> hasn't adopted the GA <code>/openai/v1/realtime</code> path yet; Voice Live is
-GA on <code>2025-10-01</code>), and one <code>extra_query</code> key (<code>model=</code>) because
-Voice Live keys off <code>&amp;model=</code> not <code>&amp;deployment=</code>.</p>
-{diff_rt_vl}
+<div class="diff-section">
+  <div class="diff-section-title">
+    <span class="diff-step">1</span>
+    <span>Realtime → Voice Live</span>
+  </div>
+  <p class="diff-section-lede">
+    The headline diff. <b>Three small changes</b> to the same
+    <code>AsyncAzureOpenAI</code> client: a <code>websocket_base_url</code>
+    kwarg, a different api-version, and one <code>extra_query</code> key
+    (<code>model=</code>) because Voice Live keys off
+    <code>&amp;model=</code> not <code>&amp;deployment=</code>.
+  </p>
+  {diff_rt_vl}
+</div>
 
-<h3>② Azure Voice Live → Voice Live + Foundry Agent</h3>
-<p style="color:#555;">Same client. Same <code>connect()</code> call. The only new thing is the
-<code>extra_query</code> dict that routes traffic to a hosted Foundry Agent
-instead of a raw model.</p>
-{diff_vl_ag}
+<div class="diff-section">
+  <div class="diff-section-title">
+    <span class="diff-step">2</span>
+    <span>Voice Live → Voice Live + Foundry Agent</span>
+  </div>
+  <p class="diff-section-lede">
+    Same client, same <code>connect()</code> call. The only new thing is
+    the <code>extra_query</code> dict that routes traffic to a hosted
+    Foundry Agent instead of a raw model.
+  </p>
+  {diff_vl_ag}
+</div>
 """
-
-
-# Strip ANSI / control chars defensively if any sneak in via file reads
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def _strip_ansi(s: str) -> str:
-    return _ANSI_RE.sub("", s)
