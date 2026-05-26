@@ -26,11 +26,11 @@ def _html_diff(left: tuple[str, str], right: tuple[str, str]) -> str:
     right_name, right_label = right
     left_lines = _read(REPO_ROOT / left_name)
     right_lines = _read(REPO_ROOT / right_name)
-    differ = difflib.HtmlDiff(wrapcolumn=80, tabsize=4)
+    differ = difflib.HtmlDiff(wrapcolumn=72, tabsize=4)
     table = differ.make_table(
         left_lines, right_lines,
         fromdesc=left_label, todesc=right_label,
-        context=True, numlines=2,
+        context=True, numlines=1,
     )
     # difflib's default HTML uses inline class names that look terrible without their stylesheet;
     # inject a compact stylesheet so the diff is readable in Gradio.

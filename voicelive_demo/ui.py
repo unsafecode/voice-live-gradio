@@ -30,43 +30,46 @@ STATUS_PALETTE = {
     "error":      ("Error ⚠️",      "#dc3545"),
 }
 
+# Short labels — the dropdown column is narrow and long labels get clipped.
 VOICE_OPTIONS = [
-    ("Ava — Female, natural (Azure Neural HD)",          "en-US-Ava:DragonHDLatestNeural"),
-    ("Jenny — Female, conversational (Azure Neural HD)", "en-US-Jenny:DragonHDLatestNeural"),
-    ("Guy — Male, professional (Azure Neural)",          "en-US-GuyNeural"),
-    ("Davis — Male, warm (Azure Neural HD)",             "en-US-Davis:DragonHDLatestNeural"),
-    ("Brian — Male, casual (Azure Neural)",              "en-US-BrianNeural"),
-    ("Alloy — OpenAI versatile",                         "alloy"),
-    ("Nova — OpenAI warm",                               "nova"),
-    ("Shimmer — OpenAI friendly",                        "shimmer"),
+    ("🟢 Ava (default)",  "en-US-Ava:DragonHDLatestNeural"),
+    ("🟢 Jenny",          "en-US-Jenny:DragonHDLatestNeural"),
+    ("🟢 Davis",          "en-US-Davis:DragonHDLatestNeural"),
+    ("🟢 Guy",            "en-US-GuyNeural"),
+    ("🟢 Brian",          "en-US-BrianNeural"),
+    ("🔵 Alloy (OpenAI)", "alloy"),
+    ("🔵 Nova (OpenAI)",  "nova"),
+    ("🔵 Shimmer (OpenAI)", "shimmer"),
 ]
 
 
 def _badge_html(label: str, value: str, color: str = "#0078D4") -> str:
     return (
         f'<span style="display:inline-block;padding:4px 12px;border-radius:12px;'
-        f'background:{color};color:white;font-weight:600;font-size:13px;'
-        f'margin-right:6px;">{label}: {value}</span>'
+        f'background:{color};color:white;font-weight:600;font-size:12.5px;'
+        f'margin:2px 4px 2px 0;letter-spacing:.2px;">'
+        f'<span style="opacity:.75;">{label}</span> · {value}</span>'
     )
 
 
 def _header_html(mode: Mode, model: str, endpoint: str) -> str:
     mode_label, mode_color = MODE_LABELS[mode]
+    short_endpoint = endpoint.replace("wss://", "").replace("https://", "").split("/")[0]
     badges = (
         _badge_html("MODE", mode_label, mode_color)
         + _badge_html("MODEL", model, "#444")
-        + _badge_html("ENDPOINT", endpoint.replace("wss://", "").replace("https://", "").split("/")[0], "#888")
+        + _badge_html("ENDPOINT", short_endpoint, "#888")
     )
     return f"""
-<div style="padding:14px 18px;background:#f8f9fa;border-radius:10px;margin-bottom:8px;
-            border-left:5px solid {mode_color};">
-  <div style="font-size:22px;font-weight:700;color:#222;margin-bottom:6px;">
-    🎙️ Voice Live Gradio Demo
+<div style="padding:14px 18px;background:linear-gradient(180deg,#f8f9fa 0%,#f1f3f5 100%);
+            border-radius:10px;margin-bottom:10px;border-left:5px solid {mode_color};">
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
+    <span style="font-size:22px;font-weight:700;color:#222;">🎙️ Voice Live Gradio Demo</span>
+    <span style="font-size:13px;color:#666;">
+      Drop-in switch · Azure OpenAI Realtime → Azure AI Foundry Voice Live
+    </span>
   </div>
-  <div style="font-size:13px;color:#555;margin-bottom:10px;">
-    The trivial switch from Azure OpenAI Realtime → Azure AI Foundry Voice Live, talking to you live.
-  </div>
-  <div>{badges}</div>
+  <div style="line-height:2;">{badges}</div>
 </div>
 """
 
@@ -75,7 +78,7 @@ def _status_html(status: str = "idle") -> str:
     label, color = STATUS_PALETTE.get(status, STATUS_PALETTE["idle"])
     return (
         f'<div style="display:inline-block;padding:6px 14px;border-radius:8px;'
-        f'background:{color}20;color:{color};border:1.5px solid {color};'
+        f'background:{color}22;color:{color};border:1.5px solid {color};'
         f'font-weight:600;font-size:14px;">● {label}</div>'
     )
 
@@ -96,8 +99,31 @@ def _bind_state_outputs(chatbot: list[dict], status_html_value: str, session_inf
     elif event.kind == "session":
         sid = event.payload.get("session_id", "?")
         model = event.payload.get("model", "?")
-        new_session = f"session_id=`{sid}`  ·  model=`{model}`"
+        new_session = f"`session_id`: `{sid}`  ·  `model`: `{model}`"
     return new_chatbot, new_status, new_session
+
+
+CUSTOM_CSS = """
+footer {visibility: hidden;}
+.gradio-container {max-width: 1180px !important; margin: 0 auto !important;}
+
+/* Force the WebRTC audio widget to stay inside its column.
+   FastRTC's `.full-screen` class makes the wave escape the container; we
+   neutralise it with explicit positioning. The `full_screen=False` kwarg
+   removes the class, but we belt-and-brace here in case it sneaks back. */
+.audio-container, .gradio-webrtc-waveContainer, .wave-container {
+    position: relative !important;
+    min-height: 220px;
+}
+
+/* Diff tables: predictable widths, more breathing room */
+.diff_table { width: 100% !important; table-layout: fixed; }
+.diff_table td:nth-child(1), .diff_table td:nth-child(4) { width: 36px; color:#999; }
+.diff_table td:nth-child(2), .diff_table td:nth-child(5) { width: calc(50% - 60px); }
+
+/* Tab bar — bigger, more clickable */
+.tab-nav button { font-size: 15px !important; padding: 10px 16px !important; }
+"""
 
 
 def build_ui(
@@ -118,59 +144,68 @@ def build_ui(
     with gr.Blocks(
         title="Voice Live Gradio Demo",
         theme=gr.themes.Soft(primary_hue="blue", secondary_hue="emerald"),
-        css="""
-        footer {visibility: hidden;}
-        .gradio-container {max-width: 1100px !important; margin: 0 auto !important;}
-        """,
+        css=CUSTOM_CSS,
     ) as demo:
         gr.HTML(_header_html(mode, model, endpoint))
 
         with gr.Tabs():
             with gr.Tab("🎙️ Talk"):
-                with gr.Row():
-                    with gr.Column(scale=1, min_width=260):
-                        status_html = gr.HTML(_status_html("idle"), label="Status")
+                # Row 1: mic widget (big) + live status (pinned right)
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=4):
+                        with gr.Group():
+                            webrtc = WebRTC(
+                                label="🎤 Microphone — click ⏺ Record to start talking",
+                                modality="audio",
+                                mode="send-receive",
+                                rtc_configuration=rtc_configuration,
+                                icon_button_color="#107C10",
+                                pulse_color="#d63384",
+                                full_screen=False,
+                            )
+                    with gr.Column(scale=1, min_width=200):
+                        status_html = gr.HTML(_status_html("idle"))
+                        gr.Markdown(
+                            "💡 _Click **⏺ Record**, then talk. "
+                            "The assistant interrupts naturally._"
+                        )
+
+                # Row 2: transcript (left, wide) + controls (right, compact)
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=3):
+                        chatbot = gr.Chatbot(
+                            type="messages",
+                            label="Transcript",
+                            height=460,
+                            show_copy_button=True,
+                            avatar_images=(None, "https://learn.microsoft.com/favicon.ico"),
+                        )
+                    with gr.Column(scale=1, min_width=280):
                         voice = gr.Dropdown(
                             choices=VOICE_OPTIONS,
                             value=shared.voice,
-                            label="Voice (applies on next session)",
+                            label="Voice",
+                            info="🟢 Azure Neural · 🔵 OpenAI · applies on next session",
                             interactive=True,
                         )
                         instructions = gr.Textbox(
                             value=shared.instructions,
                             label="System instructions",
-                            lines=4,
+                            lines=5,
+                            max_lines=8,
                             interactive=True,
                         )
-                        apply_btn = gr.Button("Apply voice + instructions ↻", variant="secondary")
-                        reset_btn = gr.Button("Clear conversation 🗑️", variant="secondary")
-
+                        with gr.Row():
+                            apply_btn = gr.Button("Apply ↻", variant="primary", size="sm")
+                            reset_btn = gr.Button("Reset 🗑️", variant="secondary", size="sm")
                         with gr.Accordion("Connection details", open=False):
-                            session_info = gr.Markdown(value="No session yet.")
+                            session_info = gr.Markdown(value="_No session yet._")
                             gr.Markdown(
-                                f"**Foundry endpoint** · `{endpoint}`\n\n"
-                                f"**Voice Live WSS** · `{voice_live_endpoint}`\n\n"
+                                f"**Foundry endpoint**\n\n`{endpoint}`\n\n"
+                                f"**Voice Live WSS**\n\n`{voice_live_endpoint}`\n\n"
                                 f"**Mode** · `{mode.value}`\n\n"
                                 f"**Auth** · `DefaultAzureCredential` (Entra ID, no API keys)"
                             )
-
-                    with gr.Column(scale=2):
-                        webrtc = WebRTC(
-                            label="Microphone (talk to the assistant)",
-                            modality="audio",
-                            mode="send-receive",
-                            rtc_configuration=rtc_configuration,
-                            variant="default",
-                            height=140,
-                            full_screen=False,
-                        )
-                        chatbot = gr.Chatbot(
-                            type="messages",
-                            label="Transcript",
-                            height=420,
-                            show_copy_button=True,
-                            avatar_images=(None, "https://learn.microsoft.com/favicon.ico"),
-                        )
 
                 webrtc.stream(
                     fn=handler,
