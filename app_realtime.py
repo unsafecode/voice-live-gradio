@@ -44,7 +44,9 @@ async def connect_factory():
         api_version=settings.api_version_realtime,
         azure_ad_token_provider=azure_ad_token_provider,
     )
-    return client.realtime.connect(model=settings.azure_deployment_name)
+    return client.realtime.connect(
+        model=settings.azure_deployment_name,
+    )
 
 
 handler = VoiceHandler(

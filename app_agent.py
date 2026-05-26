@@ -26,7 +26,7 @@ SHARED = SharedState()
 
 
 def make_session(shared: SharedState) -> dict:
-    """Session config sent on every (re)connection. Agent owns instructions."""
+    """Session config sent on every (re)connection."""
     return {
         "turn_detection": {"type": "azure_semantic_vad", "remove_filler_words": False},
         "input_audio_format": "pcm16",
