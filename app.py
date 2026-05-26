@@ -1,14 +1,17 @@
-"""Dispatcher — picks the right app_*.py based on the MODE env var.
+"""Dispatcher — picks the right app shell based on the MODE env var.
 
-This lets people keep doing `uv run app.py` (or `python app.py`) like before,
-while the real entrypoint lives in one of the three rung-specific files.
+By default (``MODE`` unset or ``MODE=demo``) the unified switcher UI
+launches, with all three rungs reachable from one page. The single-mode
+shells stay supported for the pedagogical "look how minimal one rung is"
+story:
 
-    MODE=realtime   → app_realtime.py    (Azure OpenAI Realtime — rung 1)
-    MODE=voicelive  → app_voicelive.py   (Azure Voice Live      — rung 2, default)
-    MODE=agent      → app_agent.py       (Voice Live + Foundry Agent — rung 3)
+    MODE=demo       → app_demo.py        (unified switcher — default)
+    MODE=realtime   → app_realtime.py    (rung 1 only — Azure OpenAI Realtime)
+    MODE=voicelive  → app_voicelive.py   (rung 2 only — Azure Voice Live)
+    MODE=agent      → app_agent.py       (rung 3 only — Voice Live + Foundry Agent)
 
-The three apps are deliberately structurally identical except for the
-connection-setup block. See the "View the diff" tab in the running UI.
+The four entry points share the same connection logic (in
+``voicelive_demo/rungs/``) and the same UI (in ``voicelive_demo/ui.py``).
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message
 logger = logging.getLogger("voice-live-demo")
 
 MODE_TO_MODULE = {
+    "demo":      "app_demo",
     "realtime":  "app_realtime",
     "voicelive": "app_voicelive",
     "agent":     "app_agent",
@@ -28,7 +32,7 @@ MODE_TO_MODULE = {
 
 
 def main() -> None:
-    mode = os.getenv("MODE", "voicelive").strip().lower()
+    mode = os.getenv("MODE", "demo").strip().lower()
     module_name = MODE_TO_MODULE.get(mode)
     if not module_name:
         logger.error(

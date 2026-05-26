@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+RUNGS_DIR = REPO_ROOT / "voicelive_demo" / "rungs"
 CONTEXT_LINES = 2
 
 # Functions we surface, in order. If a function is missing from a file we
@@ -183,9 +184,9 @@ def _summary_chips(
 
 def render_diffs_html() -> str:
     """Render the two key transitions as compact, minimal-noise diff cards."""
-    rt = _read(REPO_ROOT / "app_realtime.py")
-    vl = _read(REPO_ROOT / "app_voicelive.py")
-    ag = _read(REPO_ROOT / "app_agent.py")
+    rt = _read(RUNGS_DIR / "realtime.py")
+    vl = _read(RUNGS_DIR / "voicelive.py")
+    ag = _read(RUNGS_DIR / "agent.py")
 
     def _section(
         step: str,

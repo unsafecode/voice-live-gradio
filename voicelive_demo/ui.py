@@ -1,8 +1,9 @@
 """Gradio Blocks UI for the demo.
 
-The single place where presentation lives. The three `app_*.py` files at
-the repo root pass in their connection details; this module renders a
-consistent, branded UI on top.
+The single place where presentation lives. The four `app_*.py` shells at
+the repo root pass in the rung registry + settings; this module renders a
+consistent, branded UI on top, and optionally a runtime mode switcher
+when more than one rung is registered.
 """
 from __future__ import annotations
 
@@ -11,15 +12,10 @@ from typing import Any
 import gradio as gr
 from fastrtc import WebRTC
 
-from voicelive_demo.config import Mode
+from voicelive_demo.config import Mode, Settings
 from voicelive_demo.diff_assets import render_diffs_html
 from voicelive_demo.handler import SharedState, StatusEvent
-
-MODE_LABELS = {
-    Mode.REALTIME:  ("rung 1 · Azure OpenAI Realtime",       "#0078D4"),
-    Mode.VOICELIVE: ("rung 2 · Azure Voice Live",            "#107C10"),
-    Mode.AGENT:     ("rung 3 · Voice Live + Foundry Agent",  "#7719AA"),
-}
+from voicelive_demo.rungs import REGISTRY, Rung
 
 STATUS_PALETTE = {
     "idle":       ("Idle",        "#6c757d"),
@@ -42,30 +38,37 @@ VOICE_OPTIONS = [
 ]
 
 
-def _header_html(mode: Mode, model: str, endpoint: str) -> str:
-    mode_label, mode_color = MODE_LABELS[mode]
+def _chips_html(rung: Rung, settings: Settings) -> str:
+    """Render the three info chips (MODE / MODEL / ENDPOINT) for the active rung."""
+    endpoint = (
+        settings.azure_voice_live_endpoint if rung.mode in (Mode.VOICELIVE, Mode.AGENT)
+        else settings.azure_endpoint
+    )
     short_endpoint = endpoint.replace("wss://", "").replace("https://", "").split("/")[0]
     return f"""
-<div class="vl-header">
-  <div class="vl-header-main">
-    <div class="vl-title">Voice Live <span class="vl-title-thin">Gradio Demo</span></div>
-    <div class="vl-subtitle">A drop-in switch from Azure OpenAI Realtime to Azure AI Foundry Voice Live.</div>
+<div class="vl-chips">
+  <div class="vl-chip">
+    <span class="vl-chip-dot" style="background:{rung.color};"></span>
+    <span class="vl-chip-label">RUNG</span>
+    <span class="vl-chip-value">{rung.label}</span>
   </div>
-  <div class="vl-chips">
-    <div class="vl-chip">
-      <span class="vl-chip-dot" style="background:{mode_color};"></span>
-      <span class="vl-chip-label">MODE</span>
-      <span class="vl-chip-value">{mode_label}</span>
-    </div>
-    <div class="vl-chip">
-      <span class="vl-chip-label">MODEL</span>
-      <span class="vl-chip-value vl-mono">{model}</span>
-    </div>
-    <div class="vl-chip">
-      <span class="vl-chip-label">ENDPOINT</span>
-      <span class="vl-chip-value vl-mono">{short_endpoint}</span>
-    </div>
+  <div class="vl-chip">
+    <span class="vl-chip-label">MODEL</span>
+    <span class="vl-chip-value vl-mono">{settings.azure_deployment_name}</span>
   </div>
+  <div class="vl-chip">
+    <span class="vl-chip-label">ENDPOINT</span>
+    <span class="vl-chip-value vl-mono">{short_endpoint}</span>
+  </div>
+</div>
+"""
+
+
+def _header_html_static() -> str:
+    return """
+<div class="vl-header-main">
+  <div class="vl-title">Voice Live <span class="vl-title-thin">Gradio Demo</span></div>
+  <div class="vl-subtitle">A drop-in switch from Azure OpenAI Realtime to Azure AI Foundry Voice Live.</div>
 </div>
 """
 
@@ -174,12 +177,12 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 
 /* ── Header ────────────────────────────────────────────────────────── */
 .vl-header {
-    background: var(--vl-surface);
-    border: 1px solid var(--vl-border);
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 18px;
-    display: flex; flex-direction: column; gap: 16px;
+    background: var(--vl-surface) !important;
+    border: 1px solid var(--vl-border) !important;
+    border-radius: 12px !important;
+    padding: 20px 24px !important;
+    margin-bottom: 18px !important;
+    display: flex !important; flex-direction: column !important; gap: 14px !important;
     box-shadow: var(--vl-shadow);
 }
 .vl-header-main { display: flex; flex-direction: column; gap: 4px; }
@@ -207,6 +210,60 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 }
 .vl-chip-value { color: var(--vl-text); font-weight: 500; }
 .vl-mono { font-family: var(--vl-mono); font-size: 12px; }
+
+/* ── Live mode switcher ────────────────────────────────────────────── */
+.vl-switcher-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--vl-text-faint);
+    margin: 6px 0 -4px 0;
+}
+.vl-switcher {
+    display: inline-flex !important;
+    flex-wrap: nowrap !important;
+    gap: 0 !important;
+    padding: 4px !important;
+    background: var(--vl-surface-soft) !important;
+    border: 1px solid var(--vl-border) !important;
+    border-radius: 10px !important;
+    width: fit-content !important;
+    align-self: flex-start;
+}
+.vl-switcher .gr-button,
+.vl-switcher button.vl-switcher-btn {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    padding: 6px 16px !important;
+    margin: 0 !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    border: none !important;
+    box-shadow: none !important;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.vl-switcher button.vl-switcher-idle {
+    background: transparent !important;
+    color: var(--vl-text-muted) !important;
+}
+.vl-switcher button.vl-switcher-idle:hover {
+    background: var(--vl-surface) !important;
+    color: var(--vl-text) !important;
+}
+.vl-switcher button.vl-switcher-active {
+    background: var(--vl-surface) !important;
+    color: var(--vl-text) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--vl-border) !important;
+}
+.dark .vl-switcher button.vl-switcher-active {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px var(--vl-border-strong) !important;
+}
+.vl-mode-blurb {
+    color: var(--vl-text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+    margin: -4px 0 0 0;
+}
 
 /* ── Tabs ──────────────────────────────────────────────────────────── */
 .tab-nav { border-bottom: 1px solid var(--vl-border) !important; margin-bottom: 18px !important; }
@@ -565,14 +622,19 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 
 def build_ui(
     *,
-    mode: Mode,
-    model: str,
-    endpoint: str,
-    voice_live_endpoint: str,
+    rungs: list[Rung],
+    initial_mode: Mode,
+    settings: Settings,
     shared: SharedState,
     handler,
     rtc_configuration: dict[str, Any] | None = None,
 ) -> gr.Blocks:
+    if not rungs:
+        raise ValueError("build_ui requires at least one rung")
+    rung_by_mode: dict[Mode, Rung] = {r.mode: r for r in rungs}
+    initial_rung = rung_by_mode.get(initial_mode) or rungs[0]
+    multi_rung = len(rungs) > 1
+
     with gr.Blocks(
         title="Voice Live Gradio Demo",
         theme=gr.themes.Soft(
@@ -582,12 +644,43 @@ def build_ui(
         ),
         css=CUSTOM_CSS,
     ) as demo:
-        gr.HTML(_header_html(mode, model, endpoint))
+        # ── Header ────────────────────────────────────────────────────
+        with gr.Group(elem_classes="vl-header"):
+            gr.HTML(_header_html_static())
 
+            mode_picker_buttons: dict[Mode, gr.Button] = {}
+            mode_blurb_html: gr.HTML | None = None
+            if multi_rung:
+                gr.HTML(
+                    '<div class="vl-switcher-label">'
+                    'LIVE MODE — pick your rung. Switching mutates the connection factory '
+                    "in place; click the mic to (re)connect with the new destination."
+                    '</div>'
+                )
+                with gr.Row(elem_classes="vl-switcher"):
+                    for r in rungs:
+                        is_active = r.mode == initial_rung.mode
+                        btn = gr.Button(
+                            value=r.short,
+                            variant="primary" if is_active else "secondary",
+                            size="sm",
+                            elem_classes=[
+                                "vl-switcher-btn",
+                                f"vl-switcher-{r.mode.value}",
+                                "vl-switcher-active" if is_active else "vl-switcher-idle",
+                            ],
+                        )
+                        mode_picker_buttons[r.mode] = btn
+                mode_blurb_html = gr.HTML(
+                    f'<div class="vl-mode-blurb">{initial_rung.blurb}</div>'
+                )
+
+            chips_html = gr.HTML(_chips_html(initial_rung, settings))
+
+        # ── Tabs ──────────────────────────────────────────────────────
         with gr.Tabs():
             with gr.Tab("Talk"):
                 with gr.Row(equal_height=False):
-                    # Left: mic + transcript stacked
                     with gr.Column(scale=3):
                         with gr.Row(equal_height=True):
                             with gr.Column(scale=10, min_width=0):
@@ -615,7 +708,6 @@ def build_ui(
                             avatar_images=(None, "https://learn.microsoft.com/favicon.ico"),
                         )
 
-                    # Right: settings sidebar
                     with gr.Column(scale=1, min_width=300):
                         gr.HTML('<div class="vl-section-title">Settings</div>')
                         with gr.Group():
@@ -640,9 +732,9 @@ def build_ui(
                             session_info = gr.Markdown(value="_No active session._")
                             with gr.Accordion("Backend details", open=False):
                                 gr.Markdown(
-                                    f"**Foundry endpoint**\n\n`{endpoint}`\n\n"
-                                    f"**Voice Live WSS**\n\n`{voice_live_endpoint}`\n\n"
-                                    f"**Mode** · `{mode.value}`\n\n"
+                                    f"**Foundry endpoint**\n\n`{settings.azure_endpoint}`\n\n"
+                                    f"**Voice Live WSS**\n\n`{settings.azure_voice_live_endpoint}`\n\n"
+                                    f"**Default model** · `{settings.azure_deployment_name}`\n\n"
                                     f"**Auth** · `DefaultAzureCredential` (Entra ID, no API keys)"
                                 )
 
@@ -678,12 +770,11 @@ def build_ui(
                 gr.HTML(
                     '<div class="vl-section-title" style="margin:8px 0 4px;">How trivial is the switch?</div>'
                     '<p style="margin:0 0 16px 0;color:var(--vl-text-muted);font-size:13.5px;line-height:1.55;">'
-                    "Three sibling app files at the repo root, one per rung. "
-                    "All shared plumbing (UI, FastRTC pipe, audio queue, transcript fan-out) "
-                    "lives in <code style=\"font-family:var(--vl-mono);background:var(--vl-surface-soft);"
+                    "Three sibling files in <code style=\"font-family:var(--vl-mono);background:var(--vl-surface-soft);"
                     "padding:1px 6px;border-radius:4px;border:1px solid var(--vl-border);font-size:12.5px;\">"
-                    "voicelive_demo/</code>. Below is the entire delta — only the functions "
-                    "that actually change between rungs."
+                    "voicelive_demo/rungs/</code>, one per rung. All shared plumbing (UI, FastRTC pipe, "
+                    "audio queue, transcript fan-out) lives one directory up. Below is the entire delta — "
+                    "only the functions that actually change between rungs."
                     "</p>"
                 )
                 gr.HTML(render_diffs_html())
@@ -707,29 +798,65 @@ The May 2026 refresh brings it forward to GA:
 - **Azure Voice Live** is GA on api-version `2025-10-01`.
 - **Default model**: `gpt-realtime-1.5` (2026-02-23) — the newest one
   Voice Live serves in Sweden Central as of May 2026.
-- Bonus: `gpt-realtime-2` (2026-05-06) is deployed and usable from
-  the Realtime rung; Voice Live's hosted menu hasn't picked it up yet.
+
+### Entry points
+
+| Command | UI |
+|---------|-----|
+| `python app.py` (no MODE) | Unified switcher — all available rungs |
+| `MODE=realtime python app.py` | Realtime only |
+| `MODE=voicelive python app.py` | Voice Live only |
+| `MODE=agent python app.py` | Voice Live + Foundry Agent only (requires `AGENT_ID`) |
 
 ### Current backend
 
 | | |
 |-|-|
-| Mode | `{mode.value}` |
-| Foundry endpoint | `{endpoint}` |
-| Voice Live WSS | `{voice_live_endpoint}` |
-| Model | `{model}` |
+| Available rungs | `{', '.join(r.mode.value for r in rungs)}` |
+| Foundry endpoint | `{settings.azure_endpoint}` |
+| Voice Live WSS | `{settings.azure_voice_live_endpoint}` |
+| Model | `{settings.azure_deployment_name}` |
 | Auth | Entra ID via `DefaultAzureCredential` |
-
-### Switching modes
-
-Set `MODE=` in `.env` and restart:
-
-```
-MODE=realtime    # Azure OpenAI Realtime (rung 1)
-MODE=voicelive   # Azure Voice Live      (rung 2)  ← default
-MODE=agent       # Voice Live + Foundry Agent (rung 3)
-```
                     """
                 )
+
+        # ── Mode switcher wiring ─────────────────────────────────────
+        if multi_rung:
+            def _make_switch_handler(target_mode: Mode):
+                target_rung = rung_by_mode[target_mode]
+
+                def _switch() -> tuple:
+                    # Mutate the live handler in place. The next time the
+                    # WebRTC widget opens a stream (after the user clicks
+                    # the mic), start_up() reads these new callables and
+                    # dials the new WebSocket destination.
+                    handler.connect_factory = target_rung.connect_factory
+                    handler.make_session = target_rung.make_session
+                    handler.name = target_rung.mode.value
+                    shared.mode = target_rung.mode
+
+                    chip_out = _chips_html(target_rung, settings)
+                    blurb_out = f'<div class="vl-mode-blurb">{target_rung.blurb}</div>'
+                    session_out = (
+                        f"_Switched to **{target_rung.label}**. Click the mic to (re)connect._"
+                    )
+                    button_updates = tuple(
+                        gr.update(
+                            variant="primary" if r.mode == target_mode else "secondary",
+                            elem_classes=[
+                                "vl-switcher-btn",
+                                f"vl-switcher-{r.mode.value}",
+                                "vl-switcher-active" if r.mode == target_mode else "vl-switcher-idle",
+                            ],
+                        )
+                        for r in rungs
+                    )
+                    return (chip_out, blurb_out, session_out, *button_updates)
+
+                return _switch
+
+            outputs = [chips_html, mode_blurb_html, session_info, *mode_picker_buttons.values()]
+            for mode_key, btn in mode_picker_buttons.items():
+                btn.click(fn=_make_switch_handler(mode_key), inputs=None, outputs=outputs)
 
     return demo

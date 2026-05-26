@@ -16,11 +16,14 @@ import base64
 import logging
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import gradio as gr
 import numpy as np
 from fastrtc import AdditionalOutputs, AsyncStreamHandler, wait_for_item
+
+if TYPE_CHECKING:
+    from voicelive_demo.config import Mode
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,7 @@ class SharedState:
     `session.update`.
     """
 
+    mode: "Mode | None" = None
     voice: str = "en-US-Ava:DragonHDLatestNeural"
     voice_type: str = "azure-standard"
     instructions: str = (

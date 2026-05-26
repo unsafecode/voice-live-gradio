@@ -107,14 +107,26 @@ uv run app.py              # serves http://localhost:7860
 
 ### Switching rungs
 
+By default `uv run app.py` boots the **unified switcher** — all three
+rungs reachable from one UI via a segmented control in the header. Click
+a rung, click the mic to (re)connect, the next WebSocket lands at the
+new destination. No restart.
+
 ```bash
-MODE=realtime   uv run app.py   # Azure OpenAI Realtime
-MODE=voicelive  uv run app.py   # Azure Voice Live      ← default
-MODE=agent      uv run app.py   # Voice Live + Foundry Agent
+uv run app.py                    # unified switcher (default — MODE=demo)
+MODE=realtime   uv run app.py    # single-mode: Azure OpenAI Realtime
+MODE=voicelive  uv run app.py    # single-mode: Azure Voice Live
+MODE=agent      uv run app.py    # single-mode: Voice Live + Foundry Agent
 ```
 
-Or run any rung directly: `uv run app_voicelive.py`. They each expose a
-top-level `demo` Gradio Blocks; `app.py` is just a one-of-three importer.
+Or run any single-mode shell directly: `uv run app_voicelive.py`. They
+all share the same `connect_factory` / `make_session` callables — defined
+once in `voicelive_demo/rungs/{realtime,voicelive,agent}.py` — so the
+unified switcher and the **Switch diff** tab stay in lockstep with what
+each shell actually runs.
+
+The Agent rung is auto-disabled in the unified switcher if `AGENT_ID`
+and `AGENT_PROJECT_NAME` aren't set in `.env`.
 
 ## What's new in the UI
 

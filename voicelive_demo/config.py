@@ -17,6 +17,7 @@ class Mode(str, Enum):
     REALTIME = "realtime"
     VOICELIVE = "voicelive"
     AGENT = "agent"
+    DEMO = "demo"
 
 
 class Settings(BaseSettings):
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    mode: Mode = Field(Mode.VOICELIVE, alias="MODE")
+    mode: Mode = Field(Mode.DEMO, alias="MODE")
 
     azure_endpoint: str = Field(
         "https://emea-aigbb-demos-oai.openai.azure.com",

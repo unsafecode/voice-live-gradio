@@ -1,74 +1,37 @@
-"""Rung 3 — Azure AI Foundry Voice Live + Foundry Agent.
+"""Rung 3 — Voice Live + Foundry Agent · single-mode shell.
 
-The same Voice Live entrypoint as ``app_voicelive.py``, with the
-``extra_query`` dict extended to route the WebSocket to a hosted
-Foundry Agent instead of a raw model. The agent owns the instructions
-and any tools, so ``make_session`` is leaner.
+Standalone entry point that boots only the Foundry Agent rung. The
+actual connection logic lives in :mod:`voicelive_demo.rungs.agent` so
+the unified ``app.py`` switcher and the **Switch diff** tab share it.
+
+Run with ``python app_agent.py`` (or ``MODE=agent python app.py``).
+Requires ``AGENT_ID`` and ``AGENT_PROJECT_NAME`` to be set in ``.env``.
 """
 from __future__ import annotations
 
 import logging
-from openai import AsyncAzureOpenAI
 
-from voicelive_demo.config import (
-    Mode,
-    azure_ad_token_provider,
-    azure_agent_token_provider,
-    get_settings,
-)
+from voicelive_demo.config import Mode, get_settings
 from voicelive_demo.handler import SharedState, VoiceHandler
+from voicelive_demo.rungs import REGISTRY
 from voicelive_demo.ui import build_ui
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
-settings = get_settings()
-MODE = Mode.AGENT
-SHARED = SharedState()
-
-
-def make_session(shared: SharedState) -> dict:
-    """Session config sent on every (re)connection."""
-    return {
-        "turn_detection": {"type": "azure_semantic_vad", "remove_filler_words": False},
-        "input_audio_format": "pcm16",
-        "output_audio_format": "pcm16",
-        "voice": {"name": shared.voice, "type": shared.voice_type},
-        "modalities": ["text", "audio"],
-        "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
-        "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
-        "input_audio_transcription": {"model": "azure-fast-transcription"},
-    }
-
-
-async def connect_factory():
-    """The per-rung diff. Same SDK call shape for all three rungs."""
-    client = AsyncAzureOpenAI(
-        azure_endpoint=settings.azure_endpoint,
-        api_version=settings.api_version_voicelive,
-        azure_ad_token_provider=azure_ad_token_provider,
-        websocket_base_url=settings.azure_voice_live_endpoint,
-    )
-    return client.realtime.connect(
-        model=settings.azure_deployment_name,
-        extra_query={
-            "agent-id":           settings.agent_id,
-            "agent-project-name": settings.agent_project_name,
-            "agent-access-token": await azure_agent_token_provider(),
-        },
-    )
-
+_settings = get_settings()
+_rung = REGISTRY[Mode.AGENT]
+SHARED = SharedState(mode=_rung.mode)
 
 handler = VoiceHandler(
-    name="agent",
-    connect_factory=connect_factory,
-    make_session=make_session,
+    name=_rung.mode.value,
+    connect_factory=_rung.connect_factory,
+    make_session=_rung.make_session,
     shared=SHARED,
 )
 
 demo = build_ui(
-    mode=MODE,
-    model=settings.azure_deployment_name,
-    endpoint=settings.azure_endpoint,
-    voice_live_endpoint=settings.azure_voice_live_endpoint,
+    rungs=[_rung],
+    initial_mode=_rung.mode,
+    settings=_settings,
     shared=SHARED,
     handler=handler,
 )
