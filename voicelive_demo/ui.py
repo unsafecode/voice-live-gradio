@@ -38,37 +38,37 @@ VOICE_OPTIONS = [
 ]
 
 
-def _chips_html(rung: Rung, settings: Settings) -> str:
-    """Render the three info chips (MODE / MODEL / ENDPOINT) for the active rung."""
+def _short_endpoint(endpoint: str) -> str:
+    return endpoint.replace("wss://", "").replace("https://", "").split("/")[0]
+
+
+def _destination_html(rung: Rung, settings: Settings) -> str:
+    """Render the 'where you're landing' line for the active rung — model + endpoint."""
     endpoint = (
         settings.azure_voice_live_endpoint if rung.mode in (Mode.VOICELIVE, Mode.AGENT)
         else settings.azure_endpoint
     )
-    short_endpoint = endpoint.replace("wss://", "").replace("https://", "").split("/")[0]
     return f"""
-<div class="vl-chips">
-  <div class="vl-chip">
-    <span class="vl-chip-dot" style="background:{rung.color};"></span>
-    <span class="vl-chip-label">RUNG</span>
-    <span class="vl-chip-value">{rung.label}</span>
-  </div>
-  <div class="vl-chip">
-    <span class="vl-chip-label">MODEL</span>
-    <span class="vl-chip-value vl-mono">{settings.azure_deployment_name}</span>
-  </div>
-  <div class="vl-chip">
-    <span class="vl-chip-label">ENDPOINT</span>
-    <span class="vl-chip-value vl-mono">{short_endpoint}</span>
-  </div>
+<div class="vl-dest" style="--rung-color:{rung.color};">
+  <span class="vl-dest-arrow">→</span>
+  <span class="vl-dest-rung">{rung.label}</span>
+  <span class="vl-dest-sep">·</span>
+  <span class="vl-dest-key">model</span>
+  <span class="vl-dest-val vl-mono">{settings.azure_deployment_name}</span>
+  <span class="vl-dest-sep">·</span>
+  <span class="vl-dest-key">endpoint</span>
+  <span class="vl-dest-val vl-mono">{_short_endpoint(endpoint)}</span>
 </div>
 """
 
 
-def _header_html_static() -> str:
+def _hero_html() -> str:
     return """
-<div class="vl-header-main">
+<div class="vl-hero-accent"></div>
+<div class="vl-hero-main">
+  <div class="vl-hero-eyebrow">May 2026 · GA refresh</div>
   <div class="vl-title">Voice Live <span class="vl-title-thin">Gradio Demo</span></div>
-  <div class="vl-subtitle">A drop-in switch from Azure OpenAI Realtime to Azure AI Foundry Voice Live.</div>
+  <div class="vl-subtitle">A drop-in switch from Azure OpenAI Realtime to Azure AI Foundry Voice Live — same SDK, one connect call.</div>
 </div>
 """
 
@@ -175,49 +175,66 @@ footer {display:none !important;}
 .gradio-container, .gradio-container * { box-sizing: border-box; }
 body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !important; }
 
-/* ── Header ────────────────────────────────────────────────────────── */
-.vl-header {
+/* ── Hero (page header) ─────────────────────────────────────────────── */
+.vl-hero {
+    background: var(--vl-surface) !important;
+    border: 1px solid var(--vl-border) !important;
+    border-radius: 14px !important;
+    padding: 0 !important;
+    margin-bottom: 18px !important;
+    overflow: hidden;
+    box-shadow: var(--vl-shadow);
+    position: relative;
+}
+.vl-hero-accent {
+    height: 4px;
+    background: linear-gradient(90deg, #0078D4 0%, #107C10 55%, #7719AA 100%);
+}
+.vl-hero-main { display: flex; flex-direction: column; gap: 6px; padding: 20px 26px 22px; }
+.vl-hero-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--vl-text-faint);
+}
+.vl-title {
+    font-size: 24px; font-weight: 700;
+    color: var(--vl-text);
+    letter-spacing: -0.015em; line-height: 1.15;
+}
+.vl-title-thin { font-weight: 400; color: var(--vl-text-muted); }
+.vl-subtitle { font-size: 14px; color: var(--vl-text-muted); line-height: 1.5; max-width: 760px; }
+.vl-mono { font-family: var(--vl-mono); font-size: 12px; }
+
+/* ── Live mode card (inside Talk tab) ───────────────────────────────── */
+.vl-livemode {
     background: var(--vl-surface) !important;
     border: 1px solid var(--vl-border) !important;
     border-radius: 12px !important;
-    padding: 20px 24px !important;
-    margin-bottom: 18px !important;
-    display: flex !important; flex-direction: column !important; gap: 14px !important;
+    padding: 16px 18px !important;
+    margin-bottom: 16px !important;
     box-shadow: var(--vl-shadow);
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
 }
-.vl-header-main { display: flex; flex-direction: column; gap: 4px; }
-.vl-title {
-    font-size: 22px; font-weight: 600;
-    color: var(--vl-text);
-    letter-spacing: -0.01em; line-height: 1.2;
+.vl-livemode-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
 }
-.vl-title-thin { font-weight: 400; color: var(--vl-text-muted); }
-.vl-subtitle { font-size: 14px; color: var(--vl-text-muted); line-height: 1.4; }
-
-.vl-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.vl-chip {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px;
-    border: 1px solid var(--vl-border);
-    background: var(--vl-surface-soft);
-    border-radius: 8px;
-    font-size: 12.5px;
-}
-.vl-chip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
-.vl-chip-label {
-    color: var(--vl-text-faint); font-weight: 600; letter-spacing: 0.06em; font-size: 11px;
-    text-transform: uppercase;
-}
-.vl-chip-value { color: var(--vl-text); font-weight: 500; }
-.vl-mono { font-family: var(--vl-mono); font-size: 12px; }
-
-/* ── Live mode switcher ────────────────────────────────────────────── */
-.vl-switcher-label {
-    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+.vl-livemode-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--vl-text-faint);
-    margin: 6px 0 -4px 0;
 }
+.vl-livemode-hint {
+    font-size: 12.5px; color: var(--vl-text-muted);
+    font-style: italic;
+}
+.vl-livemode-body {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+
+/* Segmented switcher */
 .vl-switcher {
     display: inline-flex !important;
     flex-wrap: nowrap !important;
@@ -233,36 +250,89 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 .vl-switcher button.vl-switcher-btn {
     flex: 0 0 auto !important;
     min-width: 0 !important;
-    padding: 6px 16px !important;
+    padding: 7px 14px 7px 30px !important;
     margin: 0 !important;
-    border-radius: 6px !important;
+    border-radius: 7px !important;
     font-size: 13px !important;
     font-weight: 600 !important;
     border: none !important;
     box-shadow: none !important;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    position: relative !important;
 }
+/* Colored dot per rung — drawn via ::before so each pill is self-coloured. */
+.vl-switcher button.vl-switcher-btn::before {
+    content: "";
+    position: absolute;
+    left: 14px; top: 50%; transform: translateY(-50%);
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--vl-text-faint);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.vl-switcher button.vl-switcher-realtime::before  { background: #0078D4; }
+.vl-switcher button.vl-switcher-voicelive::before { background: #107C10; }
+.vl-switcher button.vl-switcher-agent::before     { background: #7719AA; }
+
 .vl-switcher button.vl-switcher-idle {
     background: transparent !important;
     color: var(--vl-text-muted) !important;
 }
+.vl-switcher button.vl-switcher-idle::before { opacity: 0.55; }
 .vl-switcher button.vl-switcher-idle:hover {
     background: var(--vl-surface) !important;
     color: var(--vl-text) !important;
 }
+.vl-switcher button.vl-switcher-idle:hover::before { opacity: 1; }
 .vl-switcher button.vl-switcher-active {
     background: var(--vl-surface) !important;
     color: var(--vl-text) !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--vl-border) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 0 0 1px var(--vl-border-strong) !important;
 }
+.vl-switcher button.vl-switcher-realtime.vl-switcher-active::before  { box-shadow: 0 0 0 3px rgba(0,120,212,0.18); }
+.vl-switcher button.vl-switcher-voicelive.vl-switcher-active::before { box-shadow: 0 0 0 3px rgba(16,124,16,0.18); }
+.vl-switcher button.vl-switcher-agent.vl-switcher-active::before     { box-shadow: 0 0 0 3px rgba(119,25,170,0.18); }
 .dark .vl-switcher button.vl-switcher-active {
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px var(--vl-border-strong) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5), 0 0 0 1px var(--vl-border-strong) !important;
 }
+
+/* Single-rung badge (when len(rungs) == 1 — replaces the pill row) */
+.vl-livemode-single {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+    background: var(--vl-surface-soft);
+    border: 1px solid var(--vl-border);
+    border-radius: 10px;
+    font-size: 13.5px; font-weight: 600; color: var(--vl-text);
+}
+.vl-livemode-single .vl-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+}
+
+/* Destination line (key/value, mono) */
+.vl-dest {
+    display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 14px;
+    background: var(--vl-surface-soft);
+    border: 1px solid var(--vl-border);
+    border-left: 3px solid var(--rung-color, var(--vl-accent));
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--vl-text-muted);
+    flex: 1 1 320px;
+    min-width: 0;
+}
+.vl-dest-arrow { color: var(--rung-color, var(--vl-accent)); font-weight: 700; }
+.vl-dest-rung  { color: var(--vl-text); font-weight: 600; }
+.vl-dest-sep   { color: var(--vl-text-placeholder); }
+.vl-dest-key   { color: var(--vl-text-faint); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.vl-dest-val   { color: var(--vl-text); font-weight: 500; }
+
 .vl-mode-blurb {
     color: var(--vl-text-muted);
     font-size: 13px;
     line-height: 1.5;
-    margin: -4px 0 0 0;
+    margin: 0;
+    padding-left: 2px;
 }
 
 /* ── Tabs ──────────────────────────────────────────────────────────── */
@@ -644,42 +714,61 @@ def build_ui(
         ),
         css=CUSTOM_CSS,
     ) as demo:
-        # ── Header ────────────────────────────────────────────────────
-        with gr.Group(elem_classes="vl-header"):
-            gr.HTML(_header_html_static())
-
-            mode_picker_buttons: dict[Mode, gr.Button] = {}
-            mode_blurb_html: gr.HTML | None = None
-            if multi_rung:
-                gr.HTML(
-                    '<div class="vl-switcher-label">'
-                    'LIVE MODE — pick your rung. Switching mutates the connection factory '
-                    "in place; click the mic to (re)connect with the new destination."
-                    '</div>'
-                )
-                with gr.Row(elem_classes="vl-switcher"):
-                    for r in rungs:
-                        is_active = r.mode == initial_rung.mode
-                        btn = gr.Button(
-                            value=r.short,
-                            variant="primary" if is_active else "secondary",
-                            size="sm",
-                            elem_classes=[
-                                "vl-switcher-btn",
-                                f"vl-switcher-{r.mode.value}",
-                                "vl-switcher-active" if is_active else "vl-switcher-idle",
-                            ],
-                        )
-                        mode_picker_buttons[r.mode] = btn
-                mode_blurb_html = gr.HTML(
-                    f'<div class="vl-mode-blurb">{initial_rung.blurb}</div>'
-                )
-
-            chips_html = gr.HTML(_chips_html(initial_rung, settings))
+        # ── Hero (page-level header, no rung context) ────────────────
+        with gr.Group(elem_classes="vl-hero"):
+            gr.HTML(_hero_html())
 
         # ── Tabs ──────────────────────────────────────────────────────
         with gr.Tabs():
             with gr.Tab("Talk"):
+                # ── Live mode card (the rung-switcher demo controller) ──
+                mode_picker_buttons: dict[Mode, gr.Button] = {}
+                mode_blurb_html: gr.HTML | None = None
+                with gr.Group(elem_classes="vl-livemode"):
+                    if multi_rung:
+                        gr.HTML(
+                            '<div class="vl-livemode-head">'
+                            '<span class="vl-livemode-eyebrow">Live mode</span>'
+                            '<span class="vl-livemode-hint">'
+                            "Switch any time — click the mic to (re)connect with the new destination."
+                            '</span>'
+                            '</div>'
+                        )
+                        with gr.Row(elem_classes="vl-livemode-body"):
+                            with gr.Row(elem_classes="vl-switcher"):
+                                for r in rungs:
+                                    is_active = r.mode == initial_rung.mode
+                                    btn = gr.Button(
+                                        value=r.short,
+                                        variant="primary" if is_active else "secondary",
+                                        size="sm",
+                                        elem_classes=[
+                                            "vl-switcher-btn",
+                                            f"vl-switcher-{r.mode.value}",
+                                            "vl-switcher-active" if is_active else "vl-switcher-idle",
+                                        ],
+                                    )
+                                    mode_picker_buttons[r.mode] = btn
+                            destination_html = gr.HTML(_destination_html(initial_rung, settings))
+                        mode_blurb_html = gr.HTML(
+                            f'<div class="vl-mode-blurb">{initial_rung.blurb}</div>'
+                        )
+                    else:
+                        gr.HTML(
+                            '<div class="vl-livemode-head">'
+                            '<span class="vl-livemode-eyebrow">Live mode</span>'
+                            '</div>'
+                            '<div class="vl-livemode-body">'
+                            f'<div class="vl-livemode-single">'
+                            f'<span class="vl-dot" style="background:{initial_rung.color};"></span>'
+                            f'{initial_rung.label}'
+                            f'</div>'
+                            f'{_destination_html(initial_rung, settings)}'
+                            '</div>'
+                            f'<div class="vl-mode-blurb">{initial_rung.blurb}</div>'
+                        )
+                        destination_html = None
+
                 with gr.Row(equal_height=False):
                     with gr.Column(scale=3):
                         with gr.Row(equal_height=True):
@@ -835,7 +924,7 @@ The May 2026 refresh brings it forward to GA:
                     handler.name = target_rung.mode.value
                     shared.mode = target_rung.mode
 
-                    chip_out = _chips_html(target_rung, settings)
+                    dest_out = _destination_html(target_rung, settings)
                     blurb_out = f'<div class="vl-mode-blurb">{target_rung.blurb}</div>'
                     session_out = (
                         f"_Switched to **{target_rung.label}**. Click the mic to (re)connect._"
@@ -851,11 +940,11 @@ The May 2026 refresh brings it forward to GA:
                         )
                         for r in rungs
                     )
-                    return (chip_out, blurb_out, session_out, *button_updates)
+                    return (dest_out, blurb_out, session_out, *button_updates)
 
                 return _switch
 
-            outputs = [chips_html, mode_blurb_html, session_info, *mode_picker_buttons.values()]
+            outputs = [destination_html, mode_blurb_html, session_info, *mode_picker_buttons.values()]
             for mode_key, btn in mode_picker_buttons.items():
                 btn.click(fn=_make_switch_handler(mode_key), inputs=None, outputs=outputs)
 
