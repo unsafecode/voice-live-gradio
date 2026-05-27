@@ -1,17 +1,20 @@
 [project]
 name = "voice-live-gradio"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Drop-in voice agent demo: Azure OpenAI Realtime ↔ Azure AI Foundry Voice Live, side-by-side."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp>=3.12.15",
+    "av>=16.0.0,<17.0.0",
     "azure-identity>=1.24.0",
-    "dotenv>=0.9.9",
     "fastapi>=0.116.1",
-    "fastrtc>=0.0.29",
+    "fastrtc>=0.0.34",
     "gradio>=5.42.0",
-    "openai>=1.99.9",
+    "openai>=2.0.0",
     "pydantic-settings>=2.10.1",
     "uvicorn>=0.35.0",
 ]
+
+[dependency-groups]
+dev = []
