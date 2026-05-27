@@ -63,6 +63,119 @@ Everything else — the FastRTC mic pipe, the Gradio Blocks UI, the status
 badges, the voice picker, the transcript fan-out — lives in
 `voicelive_demo/` and is **identical across all three rungs**.
 
+## Voice Live ↔ Realtime — what's actually different
+
+The single most common evaluation question is some variant of *"how is
+Voice Live different from raw Realtime, and is the realtime model
+behind it the same?"*. Short answer:
+
+> **Voice Live is Azure OpenAI Realtime + server-side speech
+> augmentations.** Same `gpt-realtime` model on both sides of the wire,
+> same `openai` Python SDK, same `client.realtime.connect` call. The
+> only on-wire difference is that Voice Live moves a handful of
+> components from your app into the platform.
+
+### Architecture — *not* a STT → LLM → TTS pipeline
+
+Common misconception worth nailing down before any evaluation: Voice
+Live is **not** "transcription → text to LLM → speech synthesis"
+chained in series. The realtime model still does native
+speech-to-speech (same `gpt-realtime`). The server-side components
+(VAD, echo cancel, noise reduction, transcription) run **alongside**
+the stream and produce *signals* the realtime model already knew how
+to consume on the Realtime API — you just don't have to produce them
+yourself anymore.
+
+```
+                Azure OpenAI Realtime                Azure Voice Live
+                ─────────────────────                ────────────────
+  ┌──────────┐                                                                ┌──────────┐
+  │ Browser  │                                                                │ Browser  │
+  └────┬─────┘                                                                └────┬─────┘
+       │ WebRTC (FastRTC)                                                          │ WebRTC (FastRTC)
+       │                                                                           │
+  ┌────▼─────┐                                                                ┌────▼─────┐
+  │ Your app │ ──── WS ───► [gpt-realtime]                                    │ Your app │ ──── WS ───► [VAD ┊ EC ┊ NR ┊ STT ┊ gpt-realtime ┊ HD TTS ┊ Agent routing]
+  │  + VAD   │                                                                └──────────┘
+  │  + EC/NR │
+  │  + STT   │
+  └──────────┘
+```
+
+The boundary moves rightward — that's the whole story. **Fluidity is
+bound by the model, not the wrapper.** If Realtime feels fluid on a
+given deployment, Voice Live on the same deployment feels identical.
+
+### Who owns what
+
+| Component | Realtime | Voice Live |
+|---|---|---|
+| Model (`gpt-realtime`, `gpt-realtime-mini`, …) | ✅ same | ✅ same |
+| SDK call shape (`client.realtime.connect`) | ✅ same | ✅ same |
+| VAD / turn detection | you (client-side `turn_detection`) | **platform** (optional semantic VAD, dedicated model) |
+| Barge-in (user interrupts model) | you | **platform** |
+| Echo cancel + noise reduction | you (or browser, lossy) | **platform** (Azure Speech stack) |
+| Transcription (user-speech STT) | you (separate Whisper call) | **platform** (`azure-fast-transcription`, same WS) |
+| TTS rendering | OpenAI voices only | OpenAI voices **+** Azure Neural HD multilingual |
+| Agent routing (tool orchestration) | you | **platform** (with Foundry Agent — rung 3) |
+| WebRTC pipe to browser | **you** | **you** |
+| Audio queue + transcript fan-out | **you** | **you** |
+| System instructions / persona | **you** | **you** (or the hosted agent owns it in rung 3) |
+
+What stays with you is unchanged — that's why the three rungs in this
+repo share `voicelive_demo/handler.py` byte-for-byte.
+
+### FAQ — the seven questions every evaluator asks
+
+**1. Is Voice Live a traditional STT→LLM→TTS pipeline, or really
+native realtime?** Native realtime. The model is `gpt-realtime`
+(speech-to-speech). The server-side STT exists for the user-input
+transcript (so you can render it), not as a step in the model loop.
+
+**2. Which components does the platform handle vs the application?**
+See the "Who owns what" table above. Briefly: VAD / barge-in / EC / NR
+/ STT / TTS rendering move server-side; WebRTC, audio queue, UI
+transcript stay client-side.
+
+**3. Which WebSocket events must my app handle to avoid latency
+accumulation?** Three: (a) play `response.audio.delta` immediately —
+don't buffer beyond the current chunk; (b) flush the playback queue on
+`input_audio_buffer.speech_started` — that's the barge-in signal; (c)
+send acks if the SDK doesn't (the `openai` 2.x SDK does). All three
+already live in [`voicelive_demo/handler.py`](voicelive_demo/handler.py)
+via FastRTC — read it, it's ~150 lines.
+
+**4. Does Voice Live handle waiting for the user natively, or does my
+app implement turn-taking?** Natively. `session.input_audio.turn_detection.type = "azure_semantic_vad"`
+gives you a Whisper-class VAD on the platform side. You can also opt
+out and run your own VAD client-side (set it to `null` / `"server_vad"`).
+
+**5. Do I have to implement turn management, accumulation, response
+resumption manually?** No. Voice Live keeps conversation state
+server-side: turn history, audio accumulation, transcript. The
+`conversation.item.*` and `response.*` events tell you what happened;
+your only job is to render them.
+
+**6. Does TTS start streaming as text generates, or only after the
+full response?** Streaming. `response.audio.delta` events fire as the
+model emits audio frames, well before `response.done`. The default in
+this demo plays them straight through FastRTC with no extra buffering.
+
+**7. Does Voice Live keep conversational sync internally, or must my
+app maintain it?** Server-side. Reload the page → fresh
+`client.realtime.connect()` resumes cleanly. Your app holds only the
+UI copy of the transcript.
+
+### Pricing
+
+Voice Live has its own line item on the
+[Azure AI Foundry pricing page](https://azure.microsoft.com/pricing/details/ai-foundry/)
+distinct from raw Realtime. The server-side components (VAD, NR, STT,
+HD TTS) are billed separately from the model token rate. For an honest
+comparison vs raw Realtime: identical model price + add-on for the
+augmentations you actually enable. Run [`benchmark/run.py`](benchmark/README.md)
+for measured latency numbers under your own load.
+
 ## Why are there 3 lines, not 1?
 
 The original demo claimed "one line — just `websocket_base_url`". As of May

@@ -64,6 +64,7 @@ DEFAULT_INSTRUCTIONS: dict[str, str] = {
 
 STRINGS: dict[str, dict[str, str]] = {
     "en": {
+        "__locale__":           "en",
         "eyebrow":              "May 2026 · GA refresh",
         "subtitle":             "A drop-in switch from Azure OpenAI Realtime to Azure AI Foundry Voice Live — same SDK, one connect call.",
         "live_mode":            "Live mode",
@@ -105,6 +106,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "diff_section2_chip2":  "Agent owns instructions",
     },
     "it": {
+        "__locale__":           "it",
         "eyebrow":              "Maggio 2026 · Aggiornamento GA",
         "subtitle":             "Un cambio drop-in da Azure OpenAI Realtime ad Azure AI Foundry Voice Live — stesso SDK, una sola chiamata di connessione.",
         "live_mode":            "Modalità live",
