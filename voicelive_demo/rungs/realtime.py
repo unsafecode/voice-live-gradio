@@ -26,7 +26,10 @@ def make_session(shared: SharedState) -> dict:
         "voice": "alloy",  # Realtime API supports the openai voice set only
         "instructions": shared.instructions,
         "modalities": ["text", "audio"],
-        "input_audio_transcription": {"model": "whisper-1"},
+        "input_audio_transcription": {
+            "model": "whisper-1",
+            "language": shared.locale,
+        },
     }
 
 

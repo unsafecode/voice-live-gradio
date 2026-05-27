@@ -15,34 +15,44 @@ from fastrtc import WebRTC
 from voicelive_demo.config import Mode, Settings
 from voicelive_demo.diff_assets import render_diffs_html
 from voicelive_demo.handler import SharedState, StatusEvent
+from voicelive_demo.i18n import (
+    DEFAULT_INSTRUCTIONS,
+    DEFAULT_VOICE,
+    LOCALES,
+    RUNG_BLURBS,
+    STATUS_LABELS,
+    STRINGS,
+    VOICE_OPTIONS,
+)
 from voicelive_demo.rungs import REGISTRY, Rung
 
-STATUS_PALETTE = {
-    "idle":       ("Idle",        "#6c757d"),
-    "connecting": ("Connecting",  "#0d6efd"),
-    "listening":  ("Listening",   "#d63384"),
-    "thinking":   ("Thinking",    "#fd7e14"),
-    "speaking":   ("Speaking",    "#198754"),
-    "error":      ("Error",       "#dc3545"),
+STATUS_COLORS = {
+    "idle":       "#6c757d",
+    "connecting": "#0d6efd",
+    "listening":  "#d63384",
+    "thinking":   "#fd7e14",
+    "speaking":   "#198754",
+    "error":      "#dc3545",
 }
 
-VOICE_OPTIONS = [
-    ("Ava — Azure Neural HD (default)",       "en-US-Ava:DragonHDLatestNeural"),
-    ("Jenny — Azure Neural HD",               "en-US-Jenny:DragonHDLatestNeural"),
-    ("Davis — Azure Neural HD",               "en-US-Davis:DragonHDLatestNeural"),
-    ("Guy — Azure Neural",                    "en-US-GuyNeural"),
-    ("Brian — Azure Neural",                  "en-US-BrianNeural"),
-    ("Alloy — OpenAI",                        "alloy"),
-    ("Nova — OpenAI",                         "nova"),
-    ("Shimmer — OpenAI",                      "shimmer"),
-]
+VOICE_OPTIONS_FOR = VOICE_OPTIONS  # re-export for readability
+
+
+def _voice_choices(locale: str) -> list[tuple[str, str]]:
+    """The voice picker shows (label, voice-name) pairs — locale-aware."""
+    return [(label, name) for (label, name, _vtype) in VOICE_OPTIONS[locale]]
+
+
+def _voice_type_lookup(locale: str) -> dict[str, str]:
+    """voice_name → voice_type so the rung can set the right session field."""
+    return {name: vtype for (_label, name, vtype) in VOICE_OPTIONS[locale]}
 
 
 def _short_endpoint(endpoint: str) -> str:
     return endpoint.replace("wss://", "").replace("https://", "").split("/")[0]
 
 
-def _destination_html(rung: Rung, settings: Settings) -> str:
+def _destination_html(rung: Rung, settings: Settings, t: dict[str, str]) -> str:
     """Render the 'where you're landing' line for the active rung — model + endpoint."""
     endpoint = (
         settings.azure_voice_live_endpoint if rung.mode in (Mode.VOICELIVE, Mode.AGENT)
@@ -62,19 +72,19 @@ def _destination_html(rung: Rung, settings: Settings) -> str:
 """
 
 
-def _hero_html() -> str:
-    return """
-<div class="vl-hero-accent"></div>
+def _hero_main_html(t: dict[str, str]) -> str:
+    return f"""
 <div class="vl-hero-main">
-  <div class="vl-hero-eyebrow">May 2026 · GA refresh</div>
+  <div class="vl-hero-eyebrow">{t['eyebrow']}</div>
   <div class="vl-title">Voice Live <span class="vl-title-thin">Gradio Demo</span></div>
-  <div class="vl-subtitle">A drop-in switch from Azure OpenAI Realtime to Azure AI Foundry Voice Live — same SDK, one connect call.</div>
+  <div class="vl-subtitle">{t['subtitle']}</div>
 </div>
 """
 
 
-def _status_html(status: str = "idle") -> str:
-    label, color = STATUS_PALETTE.get(status, STATUS_PALETTE["idle"])
+def _status_html(status: str = "idle", locale: str = "en") -> str:
+    label = STATUS_LABELS.get(locale, STATUS_LABELS["en"]).get(status, STATUS_LABELS["en"]["idle"])
+    color = STATUS_COLORS.get(status, STATUS_COLORS["idle"])
     return (
         f'<div class="vl-status" style="--status:{color};">'
         f'<span class="vl-status-dot"></span>'
@@ -83,21 +93,30 @@ def _status_html(status: str = "idle") -> str:
     )
 
 
-def _bind_state_outputs(chatbot: list[dict], status_html_value: str, session_info: str,
-                        event: StatusEvent) -> tuple[list[dict], str, str]:
-    """FastRTC additional_outputs_handler: route a StatusEvent into 3 components."""
-    new_chatbot = list(chatbot or [])
-    new_status = status_html_value
-    new_session = session_info
-    if event.kind == "message":
-        new_chatbot.append({"role": event.payload["role"], "content": event.payload["content"]})
-    elif event.kind == "status":
-        new_status = _status_html(event.payload["status"])
-    elif event.kind == "session":
-        sid = event.payload.get("session_id", "?")
-        model = event.payload.get("model", "?")
-        new_session = f"`session_id`: `{sid}`  ·  `model`: `{model}`"
-    return new_chatbot, new_status, new_session
+def _section_title_html(text: str, top: int = 0) -> str:
+    style = f' style="margin-top:{top}px;"' if top else ""
+    return f'<div class="vl-section-title"{style}>{text}</div>'
+
+
+def _livemode_head_html(t: dict[str, str]) -> str:
+    return (
+        '<div class="vl-livemode-head">'
+        f'<span class="vl-livemode-eyebrow">{t["live_mode"]}</span>'
+        f'<span class="vl-livemode-hint">{t["live_hint"]}</span>'
+        '</div>'
+    )
+
+
+def _blurb_html(rung: Rung, locale: str) -> str:
+    blurb = RUNG_BLURBS.get(locale, RUNG_BLURBS["en"]).get(rung.mode.value, rung.blurb)
+    return f'<div class="vl-mode-blurb">{blurb}</div>'
+
+
+def _chatbot_placeholder_html(t: dict[str, str]) -> str:
+    return (
+        "<div style='color:#9aa0a7;font-style:italic;text-align:center;"
+        f"padding:24px;'>{t['transcript_placeholder']}</div>"
+    )
 
 
 CUSTOM_CSS = """
@@ -190,7 +209,8 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
     height: 4px;
     background: linear-gradient(90deg, #0078D4 0%, #107C10 55%, #7719AA 100%);
 }
-.vl-hero-main { display: flex; flex-direction: column; gap: 6px; padding: 20px 26px 22px; }
+.vl-hero-body { padding: 18px 26px 20px !important; gap: 18px !important; align-items: flex-start !important; }
+.vl-hero-main { display: flex; flex-direction: column; gap: 6px; }
 .vl-hero-eyebrow {
     font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -204,6 +224,56 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 .vl-title-thin { font-weight: 400; color: var(--vl-text-muted); }
 .vl-subtitle { font-size: 14px; color: var(--vl-text-muted); line-height: 1.5; max-width: 760px; }
 .vl-mono { font-family: var(--vl-mono); font-size: 12px; }
+
+/* Language switcher (in hero, top-right) */
+.vl-hero-side {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    gap: 6px !important;
+}
+.vl-lang-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--vl-text-faint);
+    text-align: right;
+}
+.vl-lang-switcher {
+    display: inline-flex !important;
+    flex-wrap: nowrap !important;
+    gap: 0 !important;
+    padding: 3px !important;
+    background: var(--vl-surface-soft) !important;
+    border: 1px solid var(--vl-border) !important;
+    border-radius: 8px !important;
+    width: fit-content !important;
+}
+.vl-lang-switcher .gr-button,
+.vl-lang-switcher button.vl-lang-btn {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    padding: 5px 12px !important;
+    margin: 0 !important;
+    border-radius: 5px !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    border: none !important;
+    box-shadow: none !important;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.vl-lang-switcher button.vl-lang-idle {
+    background: transparent !important;
+    color: var(--vl-text-muted) !important;
+}
+.vl-lang-switcher button.vl-lang-idle:hover {
+    background: var(--vl-surface) !important;
+    color: var(--vl-text) !important;
+}
+.vl-lang-switcher button.vl-lang-active {
+    background: var(--vl-surface) !important;
+    color: var(--vl-text) !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 0 0 1px var(--vl-border-strong) !important;
+}
 
 /* ── Live mode card (inside Talk tab) ───────────────────────────────── */
 .vl-livemode {
@@ -521,6 +591,22 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
 .vl-button-row { gap: 8px !important; margin-top: 8px !important; }
 .vl-button-row > button, .vl-button-row .gr-button { flex: 1 !important; min-width: 0 !important; }
 
+/* Voice picker — keep long labels like "Isabella — Azure Multilingual (default)" inside the box */
+.vl-voice-picker .secondary-wrap input,
+.vl-voice-picker .wrap-inner input,
+.vl-voice-picker input.border-none,
+.vl-voice-picker input[type="text"] {
+    text-overflow: ellipsis !important;
+    overflow: hidden !important;
+    padding-right: 32px !important;
+}
+.vl-voice-picker ul, .vl-voice-picker .options { max-width: 100% !important; }
+.vl-voice-picker .item, .vl-voice-picker li {
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+    overflow: hidden !important;
+}
+
 /* ── Switch-diff (minimal view) ────────────────────────────────────── */
 .vlx-root { display: flex; flex-direction: column; gap: 28px; }
 
@@ -705,172 +791,65 @@ def build_ui(
     initial_rung = rung_by_mode.get(initial_mode) or rungs[0]
     multi_rung = len(rungs) > 1
 
-    with gr.Blocks(
-        title="Voice Live Gradio Demo",
-        theme=gr.themes.Soft(
-            primary_hue="blue",
-            secondary_hue="slate",
-            font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
-        ),
-        css=CUSTOM_CSS,
-    ) as demo:
-        # ── Hero (page-level header, no rung context) ────────────────
-        with gr.Group(elem_classes="vl-hero"):
-            gr.HTML(_hero_html())
+    initial_locale = shared.locale
+    t = STRINGS[initial_locale]
 
-        # ── Tabs ──────────────────────────────────────────────────────
-        with gr.Tabs():
-            with gr.Tab("Talk"):
-                # ── Live mode card (the rung-switcher demo controller) ──
-                mode_picker_buttons: dict[Mode, gr.Button] = {}
-                mode_blurb_html: gr.HTML | None = None
-                with gr.Group(elem_classes="vl-livemode"):
-                    if multi_rung:
-                        gr.HTML(
-                            '<div class="vl-livemode-head">'
-                            '<span class="vl-livemode-eyebrow">Live mode</span>'
-                            '<span class="vl-livemode-hint">'
-                            "Switch any time — click the mic to (re)connect with the new destination."
-                            '</span>'
-                            '</div>'
-                        )
-                        with gr.Row(elem_classes="vl-livemode-body"):
-                            with gr.Row(elem_classes="vl-switcher"):
-                                for r in rungs:
-                                    is_active = r.mode == initial_rung.mode
-                                    btn = gr.Button(
-                                        value=r.short,
-                                        variant="primary" if is_active else "secondary",
-                                        size="sm",
-                                        elem_classes=[
-                                            "vl-switcher-btn",
-                                            f"vl-switcher-{r.mode.value}",
-                                            "vl-switcher-active" if is_active else "vl-switcher-idle",
-                                        ],
-                                    )
-                                    mode_picker_buttons[r.mode] = btn
-                            destination_html = gr.HTML(_destination_html(initial_rung, settings))
-                        mode_blurb_html = gr.HTML(
-                            f'<div class="vl-mode-blurb">{initial_rung.blurb}</div>'
-                        )
-                    else:
-                        gr.HTML(
-                            '<div class="vl-livemode-head">'
-                            '<span class="vl-livemode-eyebrow">Live mode</span>'
-                            '</div>'
-                            '<div class="vl-livemode-body">'
-                            f'<div class="vl-livemode-single">'
-                            f'<span class="vl-dot" style="background:{initial_rung.color};"></span>'
-                            f'{initial_rung.label}'
-                            f'</div>'
-                            f'{_destination_html(initial_rung, settings)}'
-                            '</div>'
-                            f'<div class="vl-mode-blurb">{initial_rung.blurb}</div>'
-                        )
-                        destination_html = None
+    # Sync defaults to the locale's voice + instructions.
+    default_voice_name, default_voice_type = DEFAULT_VOICE[initial_locale]
+    shared.voice = default_voice_name
+    shared.voice_type = default_voice_type
+    shared.instructions = DEFAULT_INSTRUCTIONS[initial_locale]
 
-                with gr.Row(equal_height=False):
-                    with gr.Column(scale=3):
-                        with gr.Row(equal_height=True):
-                            with gr.Column(scale=10, min_width=0):
-                                gr.HTML('<div class="vl-section-title">Microphone</div>')
-                            with gr.Column(scale=2, min_width=120, elem_classes="vl-status-cell"):
-                                status_html = gr.HTML(_status_html("idle"))
-                        with gr.Group(elem_classes="vl-mic-group"):
-                            webrtc = WebRTC(
-                                label="",
-                                modality="audio",
-                                mode="send-receive",
-                                rtc_configuration=rtc_configuration,
-                                icon_button_color="#0078D4",
-                                pulse_color="#d63384",
-                                full_screen=False,
-                            )
-                        gr.HTML('<div class="vl-section-title" style="margin-top:18px;">Transcript</div>')
-                        chatbot = gr.Chatbot(
-                            type="messages",
-                            label="",
-                            height=420,
-                            show_copy_button=True,
-                            show_label=False,
-                            placeholder="<div style='color:#9aa0a7;font-style:italic;text-align:center;padding:24px;'>Conversation will appear here once you start talking.</div>",
-                            avatar_images=(None, "https://learn.microsoft.com/favicon.ico"),
-                        )
+    def _backend_md(t: dict[str, str]) -> str:
+        return (
+            f"**{t['foundry_endpoint']}**\n\n`{settings.azure_endpoint}`\n\n"
+            f"**{t['voicelive_wss']}**\n\n`{settings.azure_voice_live_endpoint}`\n\n"
+            f"**{t['default_model']}** · `{settings.azure_deployment_name}`\n\n"
+            f"**{t['auth']}** · `DefaultAzureCredential` (Entra ID, no API keys)"
+        )
 
-                    with gr.Column(scale=1, min_width=300):
-                        gr.HTML('<div class="vl-section-title">Settings</div>')
-                        with gr.Group():
-                            voice = gr.Dropdown(
-                                choices=VOICE_OPTIONS,
-                                value=shared.voice,
-                                label="Voice",
-                                interactive=True,
-                            )
-                            instructions = gr.Textbox(
-                                value=shared.instructions,
-                                label="System instructions",
-                                lines=6,
-                                max_lines=10,
-                                interactive=True,
-                            )
-                        with gr.Row(elem_classes="vl-button-row"):
-                            apply_btn = gr.Button("Apply", variant="primary", size="sm", scale=1)
-                            reset_btn = gr.Button("Reset", variant="secondary", size="sm", scale=1)
-                        gr.HTML('<div class="vl-section-title" style="margin-top:18px;">Connection</div>')
-                        with gr.Group():
-                            session_info = gr.Markdown(value="_No active session._")
-                            with gr.Accordion("Backend details", open=False):
-                                gr.Markdown(
-                                    f"**Foundry endpoint**\n\n`{settings.azure_endpoint}`\n\n"
-                                    f"**Voice Live WSS**\n\n`{settings.azure_voice_live_endpoint}`\n\n"
-                                    f"**Default model** · `{settings.azure_deployment_name}`\n\n"
-                                    f"**Auth** · `DefaultAzureCredential` (Entra ID, no API keys)"
-                                )
+    def _about_md(t: dict[str, str]) -> str:
+        if initial_locale == "it":
+            # Italian about copy — same content, translated.
+            return f"""
+### Informazioni sulla demo
 
-                webrtc.stream(
-                    fn=handler,
-                    inputs=[webrtc],
-                    outputs=[webrtc],
-                )
-                webrtc.on_additional_outputs(
-                    fn=_bind_state_outputs,
-                    inputs=[chatbot, status_html, session_info],
-                    outputs=[chatbot, status_html, session_info],
-                )
+Questo repository è nato come una prova in una sola riga del fatto che
+**Azure AI Foundry Voice Live è un sostituto drop-in di Azure OpenAI
+Realtime** — stesso SDK, stessa chiamata, solo una destinazione
+WebSocket diversa.
 
-                def _apply_settings(v: str, ins: str) -> str:
-                    shared.voice = v
-                    shared.instructions = ins
-                    return _status_html("idle")
+L'aggiornamento di maggio 2026 lo porta in GA:
 
-                apply_btn.click(
-                    fn=_apply_settings,
-                    inputs=[voice, instructions],
-                    outputs=[status_html],
-                )
+- **SDK Python `openai`** sul percorso GA `client.realtime.connect`
+  (`client.beta.realtime` è stato deprecato, ritiro 30 aprile 2026).
+- **Azure OpenAI Realtime** usa api-version `2025-04-01-preview` perché
+  il path GA `/openai/v1/realtime` non è ancora esposto da `openai 2.x`;
+  passeremo non appena disponibile.
+- **Azure Voice Live** è GA su api-version `2025-10-01`.
+- **Modello predefinito**: `gpt-realtime-1.5` (2026-02-23) — il più
+  recente che Voice Live serve in Sweden Central a maggio 2026.
 
-                def _reset_conversation() -> tuple[list, str]:
-                    shared.reset_requested = True
-                    return [], _status_html("idle")
+### Punti d'ingresso
 
-                reset_btn.click(fn=_reset_conversation, inputs=None, outputs=[chatbot, status_html])
+| Comando | UI |
+|---------|-----|
+| `python app.py` (no MODE) | Switcher unificato — tutti i gradini disponibili |
+| `MODE=realtime python app.py` | Solo Realtime |
+| `MODE=voicelive python app.py` | Solo Voice Live |
+| `MODE=agent python app.py` | Solo Voice Live + Foundry Agent (richiede `AGENT_ID`) |
 
-            with gr.Tab("Switch diff"):
-                gr.HTML(
-                    '<div class="vl-section-title" style="margin:8px 0 4px;">How trivial is the switch?</div>'
-                    '<p style="margin:0 0 16px 0;color:var(--vl-text-muted);font-size:13.5px;line-height:1.55;">'
-                    "Three sibling files in <code style=\"font-family:var(--vl-mono);background:var(--vl-surface-soft);"
-                    "padding:1px 6px;border-radius:4px;border:1px solid var(--vl-border);font-size:12.5px;\">"
-                    "voicelive_demo/rungs/</code>, one per rung. All shared plumbing (UI, FastRTC pipe, "
-                    "audio queue, transcript fan-out) lives one directory up. Below is the entire delta — "
-                    "only the functions that actually change between rungs."
-                    "</p>"
-                )
-                gr.HTML(render_diffs_html())
+### Backend corrente
 
-            with gr.Tab("About"):
-                gr.Markdown(
-                    f"""
+| | |
+|-|-|
+| Gradini disponibili | `{', '.join(r.mode.value for r in rungs)}` |
+| Endpoint Foundry | `{settings.azure_endpoint}` |
+| WSS Voice Live | `{settings.azure_voice_live_endpoint}` |
+| Modello | `{settings.azure_deployment_name}` |
+| Autenticazione | Entra ID via `DefaultAzureCredential` |
+"""
+        return f"""
 ### About this demo
 
 This repository started as a one-line proof that **Azure AI Foundry Voice
@@ -906,8 +885,195 @@ The May 2026 refresh brings it forward to GA:
 | Voice Live WSS | `{settings.azure_voice_live_endpoint}` |
 | Model | `{settings.azure_deployment_name}` |
 | Auth | Entra ID via `DefaultAzureCredential` |
-                    """
+"""
+
+    def _diff_intro_html(t: dict[str, str]) -> str:
+        return (
+            f'<div class="vl-section-title" style="margin:8px 0 4px;">{t["diff_title"]}</div>'
+            '<p style="margin:0 0 16px 0;color:var(--vl-text-muted);font-size:13.5px;line-height:1.55;">'
+            f'{t["diff_lede"]}'
+            '</p>'
+        )
+
+    def _bind_state_outputs(chatbot: list[dict], status_html_value: str, session_info: str,
+                            event: StatusEvent) -> tuple[list[dict], str, str]:
+        """FastRTC additional_outputs_handler: route a StatusEvent into 3 components."""
+        new_chatbot = list(chatbot or [])
+        new_status = status_html_value
+        new_session = session_info
+        if event.kind == "message":
+            new_chatbot.append({"role": event.payload["role"], "content": event.payload["content"]})
+        elif event.kind == "status":
+            new_status = _status_html(event.payload["status"], shared.locale)
+        elif event.kind == "session":
+            sid = event.payload.get("session_id", "?")
+            model = event.payload.get("model", "?")
+            new_session = f"`session_id`: `{sid}`  ·  `model`: `{model}`"
+        return new_chatbot, new_status, new_session
+
+    with gr.Blocks(
+        title="Voice Live Gradio Demo",
+        theme=gr.themes.Soft(
+            primary_hue="blue",
+            secondary_hue="slate",
+            font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+        ),
+        css=CUSTOM_CSS,
+    ) as demo:
+        # ── Hero (page-level header) ─────────────────────────────────
+        lang_buttons: dict[str, gr.Button] = {}
+        with gr.Group(elem_classes="vl-hero"):
+            gr.HTML('<div class="vl-hero-accent"></div>')
+            with gr.Row(elem_classes="vl-hero-body"):
+                with gr.Column(scale=5, min_width=0):
+                    hero_main_html = gr.HTML(_hero_main_html(t))
+                with gr.Column(scale=0, min_width=200, elem_classes="vl-hero-side"):
+                    lang_label_html = gr.HTML(
+                        f'<div class="vl-lang-label">{t["language"]}</div>'
+                    )
+                    with gr.Row(elem_classes="vl-lang-switcher"):
+                        for label, code in LOCALES:
+                            is_active = (code == initial_locale)
+                            lang_btn = gr.Button(
+                                value=label,
+                                size="sm",
+                                elem_classes=[
+                                    "vl-lang-btn",
+                                    f"vl-lang-{code}",
+                                    "vl-lang-active" if is_active else "vl-lang-idle",
+                                ],
+                            )
+                            lang_buttons[code] = lang_btn
+
+        # ── Tabs ──────────────────────────────────────────────────────
+        with gr.Tabs() as tabs:
+            with gr.Tab(t["tab_talk"]) as tab_talk:
+                # ── Live mode card (the rung-switcher demo controller) ──
+                mode_picker_buttons: dict[Mode, gr.Button] = {}
+                mode_blurb_html: gr.HTML | None = None
+                with gr.Group(elem_classes="vl-livemode"):
+                    livemode_head_html = gr.HTML(_livemode_head_html(t))
+                    if multi_rung:
+                        with gr.Row(elem_classes="vl-livemode-body"):
+                            with gr.Row(elem_classes="vl-switcher"):
+                                for r in rungs:
+                                    is_active = r.mode == initial_rung.mode
+                                    btn = gr.Button(
+                                        value=r.short,
+                                        variant="primary" if is_active else "secondary",
+                                        size="sm",
+                                        elem_classes=[
+                                            "vl-switcher-btn",
+                                            f"vl-switcher-{r.mode.value}",
+                                            "vl-switcher-active" if is_active else "vl-switcher-idle",
+                                        ],
+                                    )
+                                    mode_picker_buttons[r.mode] = btn
+                            destination_html = gr.HTML(_destination_html(initial_rung, settings, t))
+                        mode_blurb_html = gr.HTML(_blurb_html(initial_rung, initial_locale))
+                    else:
+                        single_html = (
+                            '<div class="vl-livemode-body">'
+                            f'<div class="vl-livemode-single">'
+                            f'<span class="vl-dot" style="background:{initial_rung.color};"></span>'
+                            f'{initial_rung.label}'
+                            f'</div>'
+                            f'{_destination_html(initial_rung, settings, t)}'
+                            '</div>'
+                        )
+                        destination_html = gr.HTML(single_html)
+                        mode_blurb_html = gr.HTML(_blurb_html(initial_rung, initial_locale))
+
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=3):
+                        with gr.Row(equal_height=True):
+                            with gr.Column(scale=10, min_width=0):
+                                mic_title_html = gr.HTML(_section_title_html(t["microphone"]))
+                            with gr.Column(scale=2, min_width=120, elem_classes="vl-status-cell"):
+                                status_html = gr.HTML(_status_html("idle", initial_locale))
+                        with gr.Group(elem_classes="vl-mic-group"):
+                            webrtc = WebRTC(
+                                label="",
+                                modality="audio",
+                                mode="send-receive",
+                                rtc_configuration=rtc_configuration,
+                                icon_button_color="#0078D4",
+                                pulse_color="#d63384",
+                                full_screen=False,
+                            )
+                        transcript_title_html = gr.HTML(_section_title_html(t["transcript"], top=18))
+                        chatbot = gr.Chatbot(
+                            type="messages",
+                            label="",
+                            height=420,
+                            show_copy_button=True,
+                            show_label=False,
+                            placeholder=_chatbot_placeholder_html(t),
+                            avatar_images=(None, "https://learn.microsoft.com/favicon.ico"),
+                        )
+
+                    with gr.Column(scale=1, min_width=300):
+                        settings_title_html = gr.HTML(_section_title_html(t["settings"]))
+                        with gr.Group():
+                            voice = gr.Dropdown(
+                                choices=_voice_choices(initial_locale),
+                                value=shared.voice,
+                                label=t["voice"],
+                                interactive=True,
+                                elem_classes="vl-voice-picker",
+                            )
+                            instructions = gr.Textbox(
+                                value=shared.instructions,
+                                label=t["instructions"],
+                                lines=6,
+                                max_lines=10,
+                                interactive=True,
+                            )
+                        with gr.Row(elem_classes="vl-button-row"):
+                            apply_btn = gr.Button(t["apply"], variant="primary", size="sm", scale=1)
+                            reset_btn = gr.Button(t["reset"], variant="secondary", size="sm", scale=1)
+                        connection_title_html = gr.HTML(_section_title_html(t["connection"], top=18))
+                        with gr.Group():
+                            session_info = gr.Markdown(value=t["no_session"])
+                            backend_accordion = gr.Accordion(t["backend_details"], open=False)
+                            with backend_accordion:
+                                backend_md = gr.Markdown(_backend_md(t))
+
+                webrtc.stream(
+                    fn=handler,
+                    inputs=[webrtc],
+                    outputs=[webrtc],
                 )
+                webrtc.on_additional_outputs(
+                    fn=_bind_state_outputs,
+                    inputs=[chatbot, status_html, session_info],
+                    outputs=[chatbot, status_html, session_info],
+                )
+
+                def _apply_settings(v: str, ins: str) -> str:
+                    shared.voice = v
+                    shared.voice_type = _voice_type_lookup(shared.locale).get(v, "azure-standard")
+                    shared.instructions = ins
+                    return _status_html("idle", shared.locale)
+
+                apply_btn.click(
+                    fn=_apply_settings,
+                    inputs=[voice, instructions],
+                    outputs=[status_html],
+                )
+
+                def _reset_conversation() -> tuple[list, str]:
+                    shared.reset_requested = True
+                    return [], _status_html("idle", shared.locale)
+
+                reset_btn.click(fn=_reset_conversation, inputs=None, outputs=[chatbot, status_html])
+
+            with gr.Tab(t["tab_diff"]) as tab_diff:
+                diff_intro_html = gr.HTML(_diff_intro_html(t))
+                diff_body_html = gr.HTML(render_diffs_html(initial_locale))
+
+            with gr.Tab(t["tab_about"]) as tab_about:
+                about_md = gr.Markdown(_about_md(t))
 
         # ── Mode switcher wiring ─────────────────────────────────────
         if multi_rung:
@@ -924,10 +1090,11 @@ The May 2026 refresh brings it forward to GA:
                     handler.name = target_rung.mode.value
                     shared.mode = target_rung.mode
 
-                    dest_out = _destination_html(target_rung, settings)
-                    blurb_out = f'<div class="vl-mode-blurb">{target_rung.blurb}</div>'
+                    t_cur = STRINGS[shared.locale]
+                    dest_out = _destination_html(target_rung, settings, t_cur)
+                    blurb_out = _blurb_html(target_rung, shared.locale)
                     session_out = (
-                        f"_Switched to **{target_rung.label}**. Click the mic to (re)connect._"
+                        f"_{t_cur['switched_to']} **{target_rung.label}**. {t_cur['click_mic']}._"
                     )
                     button_updates = tuple(
                         gr.update(
@@ -947,5 +1114,93 @@ The May 2026 refresh brings it forward to GA:
             outputs = [destination_html, mode_blurb_html, session_info, *mode_picker_buttons.values()]
             for mode_key, btn in mode_picker_buttons.items():
                 btn.click(fn=_make_switch_handler(mode_key), inputs=None, outputs=outputs)
+
+        # ── Language switcher wiring ─────────────────────────────────
+        def _make_locale_handler(target_locale: str):
+            def _change_locale() -> tuple:
+                shared.locale = target_locale
+                # Reset voice + instructions to the locale's defaults so the
+                # demo sounds right out of the gate. (Customer can still
+                # tweak after — the textboxes stay editable.)
+                voice_name, voice_type = DEFAULT_VOICE[target_locale]
+                shared.voice = voice_name
+                shared.voice_type = voice_type
+                shared.instructions = DEFAULT_INSTRUCTIONS[target_locale]
+
+                tt = STRINGS[target_locale]
+                # Snapshot of the currently active rung (its identity didn't
+                # change — only the locale-translated blurb did).
+                current_rung = rung_by_mode.get(shared.mode or initial_rung.mode, initial_rung)
+
+                lang_btn_updates = tuple(
+                    gr.update(
+                        elem_classes=[
+                            "vl-lang-btn",
+                            f"vl-lang-{code}",
+                            "vl-lang-active" if code == target_locale else "vl-lang-idle",
+                        ],
+                    )
+                    for _label, code in LOCALES
+                )
+                return (
+                    _hero_main_html(tt),
+                    f'<div class="vl-lang-label">{tt["language"]}</div>',
+                    _livemode_head_html(tt),
+                    _blurb_html(current_rung, target_locale),
+                    _section_title_html(tt["microphone"]),
+                    _section_title_html(tt["transcript"], top=18),
+                    _section_title_html(tt["settings"], top=0),
+                    _section_title_html(tt["connection"], top=18),
+                    gr.update(
+                        choices=_voice_choices(target_locale),
+                        value=voice_name,
+                        label=tt["voice"],
+                    ),
+                    gr.update(value=shared.instructions, label=tt["instructions"]),
+                    gr.update(value=tt["apply"]),
+                    gr.update(value=tt["reset"]),
+                    tt["no_session"],
+                    gr.update(label=tt["backend_details"]),
+                    _backend_md(tt),
+                    _status_html("idle", target_locale),
+                    gr.update(label=tt["tab_talk"]),
+                    gr.update(label=tt["tab_diff"]),
+                    gr.update(label=tt["tab_about"]),
+                    _diff_intro_html(tt),
+                    render_diffs_html(target_locale),
+                    _about_md(tt),
+                    gr.update(placeholder=_chatbot_placeholder_html(tt)),
+                    *lang_btn_updates,
+                )
+            return _change_locale
+
+        locale_outputs = [
+            hero_main_html,
+            lang_label_html,
+            livemode_head_html,
+            mode_blurb_html,
+            mic_title_html,
+            transcript_title_html,
+            settings_title_html,
+            connection_title_html,
+            voice,
+            instructions,
+            apply_btn,
+            reset_btn,
+            session_info,
+            backend_accordion,
+            backend_md,
+            status_html,
+            tab_talk,
+            tab_diff,
+            tab_about,
+            diff_intro_html,
+            diff_body_html,
+            about_md,
+            chatbot,
+            *lang_buttons.values(),
+        ]
+        for code, lang_btn in lang_buttons.items():
+            lang_btn.click(fn=_make_locale_handler(code), inputs=None, outputs=locale_outputs)
 
     return demo

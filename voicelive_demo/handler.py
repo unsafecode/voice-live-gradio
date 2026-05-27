@@ -43,6 +43,7 @@ class SharedState:
     """
 
     mode: "Mode | None" = None
+    locale: str = "en"
     voice: str = "en-US-Ava:DragonHDLatestNeural"
     voice_type: str = "azure-standard"
     instructions: str = (

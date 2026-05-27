@@ -156,6 +156,10 @@ def _summary_chips(
     left_source: str,
     right_source: str,
     extra: list[str] | None = None,
+    *,
+    lines_label: str = "lines",
+    fn_one_label: str = "1 function touched",
+    fn_many_label: str = "{n} functions touched",
 ) -> str:
     """Top-of-section chip row: total lines changed across all focus fns."""
     total_added = total_removed = 0
@@ -170,10 +174,12 @@ def _summary_chips(
         total_removed += s.removed
         fns_touched.append(fn)
 
+    n = len(fns_touched)
+    fn_label = fn_one_label if n == 1 else fn_many_label.format(n=n)
     chips = [
-        f'<span class="vlx-summary-chip vlx-summary-chip-add">+{total_added} lines</span>',
-        f'<span class="vlx-summary-chip vlx-summary-chip-del">−{total_removed} lines</span>',
-        f'<span class="vlx-summary-chip">{len(fns_touched)} function{"s" if len(fns_touched) != 1 else ""} touched</span>',
+        f'<span class="vlx-summary-chip vlx-summary-chip-add">+{total_added} {lines_label}</span>',
+        f'<span class="vlx-summary-chip vlx-summary-chip-del">−{total_removed} {lines_label}</span>',
+        f'<span class="vlx-summary-chip">{fn_label}</span>',
     ]
     for e in (extra or []):
         chips.append(f'<span class="vlx-summary-chip vlx-summary-chip-info">{e}</span>')
@@ -182,8 +188,11 @@ def _summary_chips(
 
 # ── top-level entry point ─────────────────────────────────────────────
 
-def render_diffs_html() -> str:
+def render_diffs_html(locale: str = "en") -> str:
     """Render the two key transitions as compact, minimal-noise diff cards."""
+    from voicelive_demo.i18n import STRINGS
+
+    t = STRINGS.get(locale, STRINGS["en"])
     rt = _read(RUNGS_DIR / "realtime.py")
     vl = _read(RUNGS_DIR / "voicelive.py")
     ag = _read(RUNGS_DIR / "agent.py")
@@ -202,7 +211,15 @@ def render_diffs_html() -> str:
         ]
         panels_html = "".join(p for p in panels if p)
         if not panels_html:
-            panels_html = '<div class="vlx-diff-empty">No code changes in the focus functions.</div>'
+            panels_html = f'<div class="vlx-diff-empty">{t["diff_empty"]}</div>'
+        chips_html = _summary_chips(
+            left_source,
+            right_source,
+            extra=extra_chips,
+            lines_label=t["diff_lines"],
+            fn_one_label=t["diff_fn_touched_one"],
+            fn_many_label=t["diff_fn_touched_many"],
+        )
         return (
             '<div class="vlx-section">'
             f'<div class="vlx-section-head">'
@@ -210,34 +227,26 @@ def render_diffs_html() -> str:
             f'<span class="vlx-section-title">{title}</span>'
             f'</div>'
             f'<p class="vlx-lede">{lede}</p>'
-            f'{_summary_chips(left_source, right_source, extra=extra_chips)}'
+            f'{chips_html}'
             f'{panels_html}'
             '</div>'
         )
 
     section1 = _section(
         step="1",
-        title="Azure OpenAI Realtime → Azure Voice Live",
-        lede=(
-            "Same <code>AsyncAzureOpenAI</code> client, same "
-            "<code>client.realtime.connect()</code> call. Three knobs change "
-            "to point the SDK at the GA Voice Live endpoint."
-        ),
+        title=t["diff_section1_title"],
+        lede=t["diff_section1_lede"],
         left_source=rt,
         right_source=vl,
-        extra_chips=["Same SDK", "Same call shape"],
+        extra_chips=[t["diff_section1_chip1"], t["diff_section1_chip2"]],
     )
     section2 = _section(
         step="2",
-        title="Voice Live → Voice Live + Foundry Agent",
-        lede=(
-            "Same <code>connect_factory</code>. The <code>extra_query</code> "
-            "dict is swapped: the model id is replaced by an agent id, "
-            "project name, and short-lived agent access token."
-        ),
+        title=t["diff_section2_title"],
+        lede=t["diff_section2_lede"],
         left_source=vl,
         right_source=ag,
-        extra_chips=["Same SDK", "Agent owns instructions"],
+        extra_chips=[t["diff_section2_chip1"], t["diff_section2_chip2"]],
     )
 
     return f'<div class="vlx-root">{section1}{section2}</div>'

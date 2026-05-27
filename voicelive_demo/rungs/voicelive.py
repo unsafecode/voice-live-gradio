@@ -30,7 +30,10 @@ def make_session(shared: SharedState) -> dict:
         "modalities": ["text", "audio"],
         "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
         "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
-        "input_audio_transcription": {"model": "azure-fast-transcription"},
+        "input_audio_transcription": {
+            "model": "azure-fast-transcription",
+            "language": shared.locale,
+        },
     }
 
 
