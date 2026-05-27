@@ -76,12 +76,18 @@ The original demo claimed "one line — just `websocket_base_url`". As of May
 3. **`extra_query={"model": ...}`** — the SDK adds `&deployment=…` to the
    WSS URL; Voice Live keys off `&model=…`, so we add it explicitly. Tiny.
 
-## Models in play (Foundry resource: `emea-aigbb-demos-oai`, Sweden Central)
+## Models in play
 
 | Deployment | Version | Used by | Notes |
 |---|---|---|---|
 | `gpt-realtime-1.5` | `2026-02-23` | **All three rungs (default)** | The newest model Voice Live serves in Sweden Central as of May 2026 — keeps the cross-rung diff symmetric. |
 | `gpt-realtime-2` | `2026-05-06` | Optional override for rung 1 | The newest realtime model anywhere. Voice Live's hosted menu hasn't picked it up yet; will move all 3 rungs to it the day it lands. |
+
+> Voice Live additionally hosts a curated allow-list of **managed** models
+> you don't have to deploy yourself (`gpt-realtime`, `gpt-realtime-mini`,
+> `gpt-5-mini`, `gpt-4o-mini`, …). The unified switcher and the
+> benchmark reach these through the same `extra_query={"model": …}` knob —
+> no Foundry-side change required.
 
 ## Getting started
 
@@ -89,21 +95,25 @@ The original demo claimed "one line — just `websocket_base_url`". As of May
 
 - Python `>=3.13`
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and `ffmpeg` (for PyAV / FastRTC's WebRTC pipe)
-- An Azure AI Foundry resource with `gpt-realtime-1.5` (or any realtime
-  model your region serves) deployed
+- An Azure AI Foundry resource in a [Voice-Live-supported region](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions)
+  with `gpt-realtime-1.5` (or any realtime model the region serves) deployed
 - An Entra ID identity with `Cognitive Services User` on the Foundry
   resource — **no API keys** anywhere
+- (Optional, agent rung only) a Foundry Agent provisioned in the same project
 
 ### Quickstart
 
 ```bash
-git clone https://github.com/Azure-Samples/voice-live-gradio
+git clone https://github.com/unsafecode/voice-live-gradio
 cd voice-live-gradio
-cp .env.example .env       # edit endpoint, deployment, (optional) agent vars
+cp .env.example .env       # edit endpoint + deployment, (optional) agent vars
 uv sync
 az login                   # ChainedTokenCredential reads this for local dev
 uv run app.py              # serves http://localhost:7860
 ```
+
+Open `http://localhost:7860` in a browser, grant mic permission, click the
+mic to (re)connect, talk.
 
 ### Switching rungs
 
@@ -131,9 +141,13 @@ and `AGENT_PROJECT_NAME` aren't set in `.env`.
 ## What's new in the UI
 
 - **Header chip** — at-a-glance MODE / MODEL / ENDPOINT.
+- **Language switcher** — top-right of the hero. Swaps the interface
+  (labels, buttons, status pill, blurbs, diff cards, About) **and** the
+  voice + transcription language atomically. English + Italian ship in
+  the box; add a third in ~10 lines (see [Localization](#localization)).
 - **Live status** — Idle → Connecting → Listening 🎙️ → Thinking → Speaking 🔊 → Error.
-- **Voice picker** — curated Azure Neural HD + OpenAI voices; applies on
-  next session.
+- **Voice picker** — curated Azure Neural HD + OpenAI voices per locale;
+  applies on next session.
 - **System instructions** field — tweak persona without editing code.
 - **Reset conversation** — clears the transcript.
 - **Connection details panel** — endpoint, WSS URL, mode, auth method.
@@ -141,6 +155,24 @@ and `AGENT_PROJECT_NAME` aren't set in `.env`.
   computed from the live source files.
 - **ℹ️ About tab** — what each rung does and where it sits on the GA
   timeline.
+
+## Localization
+
+The interface and the model's voice + transcription language are wired
+together so visitors see (and hear) one consistent experience. All
+strings, voice option lists, and per-locale system-prompt defaults live
+in [`voicelive_demo/i18n.py`](voicelive_demo/i18n.py). Ships with:
+
+- 🇬🇧 **English** — DragonHD voices (Ava, Andrew, Emma, Brian, Aria, Davis) + OpenAI Marin/Cedar.
+- 🇮🇹 **Italian** — Multilingual Neural voices (Isabella, Giuseppe, Alessio) + standard Neural (Marta, Diego, Elsa) + OpenAI Nova/Shimmer.
+
+Adding a new locale is one entry per dict in `i18n.py`
+(`LOCALES`, `VOICE_OPTIONS`, `DEFAULT_VOICE`, `DEFAULT_INSTRUCTIONS`,
+`STRINGS`, `STATUS_LABELS`, `RUNG_BLURBS`, plus a `diff_section1_*` /
+`diff_section2_*` block in `STRINGS`). The pill switcher auto-renders
+one button per `LOCALES` entry. The active locale is passed straight
+into `session.input_audio_transcription.language` so the model
+transcribes in the right language regardless of accent.
 
 ## Auth
 
@@ -176,4 +208,15 @@ syntax, output layout, and caveats.
 - [Voice Live quickstart (Foundry Agents)](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart?tabs=windows%2Ckeyless&pivots=programming-language-python)
 - [Regional availability](https://learn.microsoft.com/azure/ai-services/speech-service/regions?tabs=voice-live#regions)
 - [Original FastRTC adapter sample](https://huggingface.co/spaces/fastrtc/talk-to-openai/blob/main/app.py)
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Missing required environment variables` on launch | `.env` not copied or `AZURE_OPENAI_ENDPOINT` / `AZURE_VOICELIVE_ENDPOINT` blank | `cp .env.example .env` and fill the two endpoint URLs |
+| `401` or `403` on first mic click | Your Entra identity lacks `Cognitive Services User` on the Foundry resource | Grant the role, then `az logout && az login` |
+| WebRTC widget says "Click to Access Microphone" forever | Browser blocked mic permission | Open browser site settings, allow microphone for `localhost:7860`, refresh |
+| Port 7860 already in use | A previous run is still bound | `lsof -tiTCP:7860 -sTCP:LISTEN` then `kill <pid>` |
+| Agent rung greyed out in switcher | `AGENT_ID` / `AGENT_PROJECT_NAME` unset | Provision a Foundry Agent in your project, paste IDs into `.env`, restart |
+| Voice quality dips when switching to Italian | Italian uses Multilingual Neural; English uses DragonHD (newer) | Expected; pick `Marta`/`Diego`/`Elsa` for standard Italian Neural which can sound crisper on short phrases |
 

@@ -36,14 +36,20 @@ class Settings(BaseSettings):
     mode: Mode = Field(Mode.DEMO, alias="MODE")
 
     azure_endpoint: str = Field(
-        "https://emea-aigbb-demos-oai.openai.azure.com",
+        ...,
         alias="AZURE_OPENAI_ENDPOINT",
+        description="https://<your-foundry-resource>.openai.azure.com",
     )
-    azure_deployment_name: str = Field("gpt-realtime-1.5", alias="AZURE_OPENAI_DEPLOYMENT_NAME")
+    azure_deployment_name: str = Field(
+        "gpt-realtime-1.5",
+        alias="AZURE_OPENAI_DEPLOYMENT_NAME",
+        description="Name of your realtime model deployment in the Foundry resource",
+    )
 
     azure_voice_live_endpoint: str = Field(
-        "wss://emea-aigbb-demos-oai.services.ai.azure.com/voice-live",
+        ...,
         alias="AZURE_VOICELIVE_ENDPOINT",
+        description="wss://<your-foundry-resource>.services.ai.azure.com/voice-live",
     )
 
     agent_project_name: Optional[str] = Field(None, alias="AGENT_PROJECT_NAME")
@@ -60,7 +66,14 @@ class Settings(BaseSettings):
 
 
 def get_settings() -> Settings:
-    s = Settings()  # type: ignore[call-arg]
+    try:
+        s = Settings()  # type: ignore[call-arg]
+    except Exception as exc:
+        raise RuntimeError(
+            "Missing required environment variables. Copy .env.example to .env "
+            "and set AZURE_OPENAI_ENDPOINT and AZURE_VOICELIVE_ENDPOINT to point at "
+            "your Azure AI Foundry resource. See README.md → Getting started."
+        ) from exc
     s.validate_mode()
     return s
 
