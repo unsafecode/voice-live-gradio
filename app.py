@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import importlib
 import logging
-import os
 import sys
+
+from voicelive_demo.config import get_settings
+from voicelive_demo.launcher import launch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("voice-live-demo")
@@ -32,7 +34,8 @@ MODE_TO_MODULE = {
 
 
 def main() -> None:
-    mode = os.getenv("MODE", "demo").strip().lower()
+    settings = get_settings()
+    mode = settings.mode.value
     module_name = MODE_TO_MODULE.get(mode)
     if not module_name:
         logger.error(
@@ -44,7 +47,7 @@ def main() -> None:
     logger.info("MODE=%s → launching %s", mode, module_name)
     module = importlib.import_module(module_name)
     demo = getattr(module, "demo")
-    demo.launch(server_name="0.0.0.0", server_port=7860, show_error=True)
+    launch(demo, settings)
 
 
 if __name__ == "__main__":

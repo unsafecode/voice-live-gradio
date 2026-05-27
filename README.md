@@ -127,12 +127,32 @@ git clone https://github.com/unsafecode/voice-live-gradio
 cd voice-live-gradio
 cp .env.example .env       # edit endpoint + deployment, (optional) agent vars
 uv sync
-az login                   # ChainedTokenCredential reads this for local dev
-uv run app.py              # serves http://localhost:7860
+az login                   # add --tenant <id> if your account spans multiple tenants
+uv run app.py              # serves http://localhost:7860 by default
 ```
 
 Open `http://localhost:7860` in a browser, grant mic permission, click the
 mic to (re)connect, talk.
+
+### Configuration
+
+Every setting is environment-driven — `.env.example` is the source of
+truth and `voicelive_demo/config.py` is the schema. Nothing in the source
+is environment-specific.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `MODE` | `demo` | `demo` (unified switcher) · `realtime` · `voicelive` · `agent` |
+| `AZURE_OPENAI_ENDPOINT` | **required** | `https://<resource>.openai.azure.com` |
+| `AZURE_VOICELIVE_ENDPOINT` | **required** | `wss://<resource>.services.ai.azure.com/voice-live` |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | `gpt-realtime-1.5` | The realtime model deployment name in your Foundry resource |
+| `AZURE_OPENAI_API_VERSION` | `2025-04-01-preview` | Realtime API version (preview today, GA when openai 2.x adopts the GA URL) |
+| `AZURE_VOICELIVE_API_VERSION` | `2025-10-01` | Voice Live GA API version |
+| `AGENT_ID` / `AGENT_PROJECT_NAME` | unset | Required only for the Agent rung; rung auto-hides when blank |
+| `AZURE_COGNITIVE_SERVICES_SCOPE` | `https://cognitiveservices.azure.com/.default` | Token audience for the model. Override for sovereign clouds (Gov / China / Germany) |
+| `AZURE_AI_SCOPE` | `https://ai.azure.com/.default` | Token audience for the Foundry Agent rung. Override for sovereign clouds |
+| `HOST` | `0.0.0.0` | Gradio bind address. Use `127.0.0.1` for loopback-only |
+| `PORT` | `7860` | Gradio TCP port. Bump if 7860 is taken |
 
 ### Switching rungs
 
@@ -148,8 +168,9 @@ MODE=voicelive  uv run app.py    # single-mode: Azure Voice Live
 MODE=agent      uv run app.py    # single-mode: Voice Live + Foundry Agent
 ```
 
-Or run any single-mode shell directly: `uv run app_voicelive.py`. They
-all share the same `connect_factory` / `make_session` callables — defined
+You can also set `MODE` in `.env` and just run `uv run app.py`. Or run
+any single-mode shell directly: `uv run app_voicelive.py`. They all
+share the same `connect_factory` / `make_session` callables — defined
 once in `voicelive_demo/rungs/{realtime,voicelive,agent}.py` — so the
 unified switcher and the **Switch diff** tab stay in lockstep with what
 each shell actually runs.
@@ -234,8 +255,12 @@ syntax, output layout, and caveats.
 |---|---|---|
 | `Missing required environment variables` on launch | `.env` not copied or `AZURE_OPENAI_ENDPOINT` / `AZURE_VOICELIVE_ENDPOINT` blank | `cp .env.example .env` and fill the two endpoint URLs |
 | `401` or `403` on first mic click | Your Entra identity lacks `Cognitive Services User` on the Foundry resource | Grant the role, then `az logout && az login` |
+| `429` on every other turn | PAYG TPM throttling on the deployment | Bump capacity in the Foundry portal, or lower `--iterations` on the benchmark |
+| `az login` lands you in the wrong tenant | Multi-tenant account | `az logout && az login --tenant <tenant-id>` |
 | WebRTC widget says "Click to Access Microphone" forever | Browser blocked mic permission | Open browser site settings, allow microphone for `localhost:7860`, refresh |
-| Port 7860 already in use | A previous run is still bound | `lsof -tiTCP:7860 -sTCP:LISTEN` then `kill <pid>` |
+| Port 7860 already in use | A previous run is still bound | Easiest: `PORT=7861 uv run app.py`. Or `lsof -tiTCP:7860 -sTCP:LISTEN` then `kill <pid>` |
+| Connection times out reaching `*.openai.azure.com` / `*.services.ai.azure.com` | Corporate egress filter | Whitelist `*.openai.azure.com`, `*.services.ai.azure.com`, `*.ai.azure.com`, `login.microsoftonline.com` |
 | Agent rung greyed out in switcher | `AGENT_ID` / `AGENT_PROJECT_NAME` unset | Provision a Foundry Agent in your project, paste IDs into `.env`, restart |
 | Voice quality dips when switching to Italian | Italian uses Multilingual Neural; English uses DragonHD (newer) | Expected; pick `Marta`/`Diego`/`Elsa` for standard Italian Neural which can sound crisper on short phrases |
+| Sovereign cloud (Gov / China / Germany): `401` even with the right role | Token audience defaults to public-cloud scopes | Set `AZURE_COGNITIVE_SERVICES_SCOPE` / `AZURE_AI_SCOPE` to your tenant's scopes in `.env` |
 
