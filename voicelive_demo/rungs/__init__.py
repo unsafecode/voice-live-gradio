@@ -13,8 +13,9 @@ This package lets:
 """
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Any, Callable
 
 from voicelive_demo.config import Mode
 from voicelive_demo.handler import SharedState
@@ -30,7 +31,11 @@ class Rung:
     short: str
     color: str
     blurb: str
-    connect_factory: Callable[[], Awaitable]
+    # ``connect_factory`` is a sync callable that returns an async context
+    # manager (it's decorated with ``@asynccontextmanager``). Accepts an
+    # optional ``model=`` keyword so the benchmark can override the deployment
+    # without forking the connection logic.
+    connect_factory: Callable[..., AbstractAsyncContextManager[Any]]
     make_session: Callable[[SharedState], dict]
 
 

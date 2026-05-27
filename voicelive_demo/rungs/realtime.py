@@ -11,6 +11,8 @@ swaps the ``extra_query`` dict for the agent triplet.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from openai import AsyncAzureOpenAI
 
 from voicelive_demo.config import azure_ad_token_provider, get_settings
@@ -42,7 +44,8 @@ def make_session(shared: SharedState) -> dict:
     }
 
 
-async def connect_factory():
+@asynccontextmanager
+async def connect_factory(*, model: str | None = None):
     """The per-rung diff. Same SDK call shape for all three rungs."""
     settings = get_settings()
     client = AsyncAzureOpenAI(
@@ -50,6 +53,10 @@ async def connect_factory():
         api_version=settings.api_version_realtime,
         azure_ad_token_provider=azure_ad_token_provider,
     )
-    return client.realtime.connect(
-        model=settings.azure_deployment_name,
-    )
+    try:
+        async with client.realtime.connect(
+            model=model or settings.azure_deployment_name,
+        ) as conn:
+            yield conn
+    finally:
+        await client.close()

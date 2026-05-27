@@ -52,14 +52,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from openai import AsyncAzureOpenAI
-
-from voicelive_demo.config import (
-    azure_ad_token_provider,
-    azure_agent_token_provider,
-    close_credential,
-    get_settings,
-)
+from voicelive_demo.config import Mode, close_credential, get_settings
+from voicelive_demo.handler import SharedState
+from voicelive_demo.rungs import REGISTRY
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("benchmark")
@@ -67,7 +62,16 @@ logger = logging.getLogger("benchmark")
 settings = get_settings()
 
 SAMPLE_RATE = 24000
-SUPPORTED_MODES = {"realtime", "voicelive", "agent"}
+SUPPORTED_MODES = {m.value for m in (Mode.REALTIME, Mode.VOICELIVE, Mode.AGENT)}
+
+# Report-metadata lookup table — pairs each rung with the api-version it pins,
+# so the comparison.md report can label scenarios without re-introducing a
+# ``if mode == "realtime": ... else: ...`` branch.
+API_VERSION_BY_MODE: dict[Mode, str] = {
+    Mode.REALTIME:  settings.api_version_realtime,
+    Mode.VOICELIVE: settings.api_version_voicelive,
+    Mode.AGENT:     settings.api_version_voicelive,
+}
 
 # Default matrix — covers the demo's narrative: own-deployment Realtime baseline,
 # Voice Live hosted realtime models (same shape, drop-in URL swap), and Voice
@@ -89,82 +93,12 @@ DEFAULT_PROMPTS = [
 
 
 # ──────────────────────────── connection plumbing ────────────────────────────
-
-def make_session(mode: str, voice: str = "en-US-Ava:DragonHDLatestNeural") -> dict:
-    """Return the session.update payload appropriate for this mode."""
-    if mode == "realtime":
-        return {
-            "turn_detection": {"type": "server_vad"},
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "voice": "alloy",  # Realtime API only accepts the OpenAI voice set
-            "modalities": ["text", "audio"],
-        }
-    # voicelive + agent share the rich session schema
-    return {
-        "turn_detection": {"type": "azure_semantic_vad", "remove_filler_words": False},
-        "input_audio_format": "pcm16",
-        "output_audio_format": "pcm16",
-        "voice": {"name": voice, "type": "azure-standard"},
-        "modalities": ["text", "audio"],
-        "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
-        "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
-        "input_audio_transcription": {"model": "azure-fast-transcription"},
-    }
-
-
-from contextlib import asynccontextmanager
-
-
-@asynccontextmanager
-async def open_connection(mode: str, model: str):
-    """Yield a connected realtime websocket, closing the client cleanly on exit.
-
-    Wrapping both the AsyncAzureOpenAI client and the realtime connection in a
-    single async context manager prevents "Unclosed client session" warnings
-    from the underlying aiohttp pool when the benchmark finishes.
-    """
-    if mode == "realtime":
-        client = AsyncAzureOpenAI(
-            azure_endpoint=settings.azure_endpoint,
-            api_version=settings.api_version_realtime,
-            azure_ad_token_provider=azure_ad_token_provider,
-        )
-        connect_kwargs: dict = {"model": model}
-    elif mode == "voicelive":
-        client = AsyncAzureOpenAI(
-            azure_endpoint=settings.azure_endpoint,
-            api_version=settings.api_version_voicelive,
-            azure_ad_token_provider=azure_ad_token_provider,
-            websocket_base_url=settings.azure_voice_live_endpoint,
-        )
-        connect_kwargs = {"model": model, "extra_query": {"model": model}}
-    elif mode == "agent":
-        if not settings.agent_id or not settings.agent_project_name:
-            raise RuntimeError("mode=agent needs AGENT_ID + AGENT_PROJECT_NAME in .env.")
-        client = AsyncAzureOpenAI(
-            azure_endpoint=settings.azure_endpoint,
-            api_version=settings.api_version_voicelive,
-            azure_ad_token_provider=azure_ad_token_provider,
-            websocket_base_url=settings.azure_voice_live_endpoint,
-        )
-        token = await azure_agent_token_provider()
-        connect_kwargs = {
-            "model": model,
-            "extra_query": {
-                "agent-id":           settings.agent_id,
-                "agent-project-name": settings.agent_project_name,
-                "agent-access-token": token,
-            },
-        }
-    else:
-        raise ValueError(f"unknown mode: {mode!r}")
-
-    try:
-        async with client.realtime.connect(**connect_kwargs) as conn:
-            yield conn
-    finally:
-        await client.close()
+#
+# Zero duplication: the rungs in ``voicelive_demo/rungs/`` own *all* the
+# per-mode connection logic. The benchmark just picks the rung and asks it
+# to connect — exactly like the Gradio app does. This is the demo's central
+# claim made operational: swapping Realtime ↔ Voice Live ↔ Agent is one
+# registry lookup, not a parallel implementation.
 
 
 # ──────────────────────────── per-turn collection ────────────────────────────
@@ -246,10 +180,17 @@ async def run_iteration(
         "error": None,
     }
 
+    rung = REGISTRY[Mode(mode)]
+    # SharedState carries the same defaults the live app uses; the rung's
+    # ``make_session`` reads it and produces the mode-specific payload
+    # (e.g. Realtime filters voice to the OpenAI set; Voice Live keeps
+    # the locale-aware HD voice). Identical to what the Gradio handler does.
+    shared = SharedState(mode=Mode(mode))
+
     t_start = time.perf_counter()
     try:
-        async with open_connection(mode, model) as conn:
-            await conn.session.update(session=make_session(mode))
+        async with rung.connect_factory(model=model) as conn:
+            await conn.session.update(session=rung.make_session(shared))
             # Drain to session.updated so the timer reflects ready-to-respond
             async for evt in conn:
                 etype = getattr(evt, "type", "?")
@@ -321,10 +262,7 @@ async def run_scenario(
 ) -> dict:
     label = f"{mode}/{model}"
     slug = _slug(label)
-    api_version = (
-        settings.api_version_realtime if mode == "realtime"
-        else settings.api_version_voicelive
-    )
+    api_version = API_VERSION_BY_MODE[Mode(mode)]
     print(f"\n=== {label}  (api-version={api_version}, {iterations} iter × {len(prompts)} turns) ===",
           flush=True)
 

@@ -29,7 +29,10 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
 
-ConnectFactory = Callable[[], Awaitable[AbstractAsyncContextManager[Any]]]
+# A rung's connect_factory is decorated with @asynccontextmanager, so calling
+# it (synchronously) returns an async context manager that yields the live
+# realtime connection.
+ConnectFactory = Callable[..., AbstractAsyncContextManager[Any]]
 SessionFactory = Callable[["SharedState"], dict]
 
 
@@ -110,8 +113,7 @@ class VoiceHandler(AsyncStreamHandler):
         logger.info("[%s] starting up", self.name)
         await self._push_status("connecting")
         try:
-            conn_mgr = await self.connect_factory()
-            async with conn_mgr as conn:
+            async with self.connect_factory() as conn:
                 self.connection = conn
                 session = self.make_session(self.shared)
                 await conn.session.update(session=session)
@@ -124,6 +126,13 @@ class VoiceHandler(AsyncStreamHandler):
             await self._push_status("error")
 
     async def _handle_event(self, event: Any) -> None:
+        # All three rungs speak the OpenAI Realtime event schema end-to-end —
+        # Voice Live exposes the same wire format, the same event names, the
+        # same payload shapes. No mode-specific branching here; the dual
+        # event names below are an SDK preview→GA migration shim
+        # (preview emitted ``response.audio.*``; GA emits ``response.output_audio.*``).
+        # openai ≥ 2.x emits only the GA names; the legacy names stay as a
+        # zero-cost safety net for older pinned SDKs.
         etype = getattr(event, "type", "?")
         logger.debug("[%s] %s", self.name, etype)
 
@@ -146,8 +155,6 @@ class VoiceHandler(AsyncStreamHandler):
             if transcript:
                 await self._push_message("user", transcript)
 
-        # Cover both preview event names (response.audio.*) and the GA names
-        # (response.output_audio.*) so we stay compatible across SDK versions.
         elif etype in ("response.audio_transcript.done", "response.output_audio_transcript.done"):
             transcript = getattr(event, "transcript", "")
             if transcript:
