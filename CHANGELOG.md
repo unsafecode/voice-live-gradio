@@ -1,5 +1,70 @@
 ## Voice Live Gradio Demo — Changelog
 
+<a name="0.3.0"></a>
+# 0.3.0 (2026-05-27)
+
+*Features*
+* **Unified `demo` mode** (`app_demo.py`) — a runtime rung switcher that
+  surfaces all three rungs (Realtime / Voice Live / Voice Live + Agent)
+  inside a single Gradio app, with a primary-button row at the top of
+  the Talk tab and live destination/endpoint badges that update on
+  switch. `MODE=demo` is now the default in `.env.example`.
+* **Italian localization** — `voicelive_demo/i18n.py` ships parallel
+  English + Italian string tables; a globe-icon language switcher in
+  the top-right toggles UI copy, voice catalog defaults, and system
+  instructions. Voice Live default voice swaps to `it-IT-Isabella` for
+  Italian.
+* **About tab** — generic, customer-neutral explainer covering
+  Realtime vs Voice Live positioning, GA timeline, and links to the
+  official Microsoft docs (no bespoke FAQ content lifted from any
+  customer conversation).
+
+*Bug Fixes*
+* **Mode-aware voice picker** — Realtime mode now exposes only the 10
+  OpenAI voices the API actually accepts (`alloy`, `ash`, `ballad`,
+  `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar`);
+  Voice Live / Agent expose the Azure Neural HD catalog per locale.
+  Previously the picker offered Azure HD voices in Realtime mode and
+  the rung silently substituted `alloy` regardless of selection.
+* **Endpoint configurability** — every endpoint, api-version, agent
+  identifier, sovereign-cloud scope, and bind address is now driven by
+  `.env` (`AZURE_OPENAI_ENDPOINT`, `AZURE_VOICELIVE_ENDPOINT`,
+  `AZURE_OPENAI_API_VERSION`, `AZURE_VOICELIVE_API_VERSION`,
+  `AGENT_PROJECT_NAME`, `AGENT_ID`, `AZURE_COGNITIVE_SERVICES_SCOPE`,
+  `AZURE_AI_SCOPE`, `HOST`, `PORT`). No hardcoded resource names.
+* **Benchmark resource cleanup** — credential + per-rung
+  `AsyncAzureOpenAI` client get `close()`d in a `finally` block; no
+  more aiohttp "Unclosed client session" warnings on exit.
+* **Diff page** — the Switch tab now reformats sources to strip
+  whitespace noise and only highlights the per-function deltas that
+  matter (kwargs into `client.realtime.connect`). Decorator +
+  try/finally scaffolding is identical across rungs so it doesn't
+  pollute the diff.
+
+*Refactors*
+* **Zero benchmark duplication** — every rung's `connect_factory` is
+  now an `@asynccontextmanager` that owns the full client + connection
+  lifecycle (open `AsyncAzureOpenAI`, enter `realtime.connect(...)`,
+  `await client.close()` on exit) and accepts an optional `model=`
+  keyword for benchmark overrides. The handler and the benchmark both
+  consume `REGISTRY[Mode(...)]` and do `async with rung.connect_factory()
+  as conn: …` — there is **no** mode branching outside the three rung
+  files (`grep -E 'if mode ==' handler.py app_*.py benchmark/run.py`
+  returns nothing connection-related).
+* **Event-handling clarification** — `handler._handle_event()` carries
+  a comment block stating explicitly that all three rungs speak the
+  OpenAI Realtime event schema end-to-end, and that the dual
+  `response.audio.*` / `response.output_audio.*` handling is an SDK
+  preview→GA migration shim, **not** mode-divergence.
+
+*Docs*
+* `README.md` rewritten with explicit sections for Quickstart,
+  Configuration, Switching rungs, Localization, Auth, Benchmark, and
+  Troubleshooting (`az login` tenant scoping, `pyaudio` build notes,
+  port 7860 conflicts).
+* `AGENTS.md` — public-repo discipline rules + branching protocol for
+  any AI coding agent working in this repo.
+
 <a name="0.2.0"></a>
 # 0.2.0 (2026-05-25)
 
