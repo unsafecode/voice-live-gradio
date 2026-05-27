@@ -119,3 +119,19 @@ _settings_for_providers = get_settings()
 azure_ad_token_provider, azure_agent_token_provider = _build_token_providers(
     _settings_for_providers
 )
+
+
+async def close_credential() -> None:
+    """Close the module-level DefaultAzureCredential.
+
+    Call this from CLI tools (e.g. the benchmark) so the underlying aiohttp
+    session in azure-identity doesn't log "Unclosed client session" warnings
+    when the event loop tears down.
+
+    The Gradio app keeps the credential alive for the process lifetime, so
+    no teardown is needed there.
+    """
+    try:
+        await _credential.close()
+    except Exception:
+        pass

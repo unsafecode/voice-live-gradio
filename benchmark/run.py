@@ -57,6 +57,7 @@ from openai import AsyncAzureOpenAI
 from voicelive_demo.config import (
     azure_ad_token_provider,
     azure_agent_token_provider,
+    close_credential,
     get_settings,
 )
 
@@ -112,24 +113,33 @@ def make_session(mode: str, voice: str = "en-US-Ava:DragonHDLatestNeural") -> di
     }
 
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
 async def open_connection(mode: str, model: str):
-    """Return the async-ctx-manager for the rung+model combination."""
+    """Yield a connected realtime websocket, closing the client cleanly on exit.
+
+    Wrapping both the AsyncAzureOpenAI client and the realtime connection in a
+    single async context manager prevents "Unclosed client session" warnings
+    from the underlying aiohttp pool when the benchmark finishes.
+    """
     if mode == "realtime":
         client = AsyncAzureOpenAI(
             azure_endpoint=settings.azure_endpoint,
             api_version=settings.api_version_realtime,
             azure_ad_token_provider=azure_ad_token_provider,
         )
-        return client.realtime.connect(model=model)
-    if mode == "voicelive":
+        connect_kwargs: dict = {"model": model}
+    elif mode == "voicelive":
         client = AsyncAzureOpenAI(
             azure_endpoint=settings.azure_endpoint,
             api_version=settings.api_version_voicelive,
             azure_ad_token_provider=azure_ad_token_provider,
             websocket_base_url=settings.azure_voice_live_endpoint,
         )
-        return client.realtime.connect(model=model, extra_query={"model": model})
-    if mode == "agent":
+        connect_kwargs = {"model": model, "extra_query": {"model": model}}
+    elif mode == "agent":
         if not settings.agent_id or not settings.agent_project_name:
             raise RuntimeError("mode=agent needs AGENT_ID + AGENT_PROJECT_NAME in .env.")
         client = AsyncAzureOpenAI(
@@ -139,15 +149,22 @@ async def open_connection(mode: str, model: str):
             websocket_base_url=settings.azure_voice_live_endpoint,
         )
         token = await azure_agent_token_provider()
-        return client.realtime.connect(
-            model=model,
-            extra_query={
+        connect_kwargs = {
+            "model": model,
+            "extra_query": {
                 "agent-id":           settings.agent_id,
                 "agent-project-name": settings.agent_project_name,
                 "agent-access-token": token,
             },
-        )
-    raise ValueError(f"unknown mode: {mode!r}")
+        }
+    else:
+        raise ValueError(f"unknown mode: {mode!r}")
+
+    try:
+        async with client.realtime.connect(**connect_kwargs) as conn:
+            yield conn
+    finally:
+        await client.close()
 
 
 # ──────────────────────────── per-turn collection ────────────────────────────
@@ -231,8 +248,7 @@ async def run_iteration(
 
     t_start = time.perf_counter()
     try:
-        mgr = await open_connection(mode, model)
-        async with mgr as conn:
+        async with open_connection(mode, model) as conn:
             await conn.session.update(session=make_session(mode))
             # Drain to session.updated so the timer reflects ready-to-respond
             async for evt in conn:
@@ -532,28 +548,31 @@ async def main() -> int:
     print(f"WAVs:        {'off' if args.no_wav else 'on'}", flush=True)
 
     results: list[dict] = []
-    for mode, model in scenarios:
-        s = await run_scenario(
-            mode, model,
-            prompts=prompts,
-            iterations=args.iterations,
-            out_dir=out_dir,
-            save_wav=not args.no_wav,
-        )
-        results.append(s)
+    try:
+        for mode, model in scenarios:
+            s = await run_scenario(
+                mode, model,
+                prompts=prompts,
+                iterations=args.iterations,
+                out_dir=out_dir,
+                save_wav=not args.no_wav,
+            )
+            results.append(s)
 
-    (out_dir / "metrics.json").write_text(json.dumps(results, indent=2))
-    (out_dir / "comparison.md").write_text(build_comparison_md(results, prompts))
+        (out_dir / "metrics.json").write_text(json.dumps(results, indent=2))
+        (out_dir / "comparison.md").write_text(build_comparison_md(results, prompts))
 
-    print("\n=== Done ===")
-    print(f"  JSON:    {out_dir / 'metrics.json'}")
-    print(f"  Report:  {out_dir / 'comparison.md'}")
-    if not args.no_wav:
-        print(f"  WAVs:    {len(list(out_dir.glob('*.wav')))} files in {out_dir}")
+        print("\n=== Done ===")
+        print(f"  JSON:    {out_dir / 'metrics.json'}")
+        print(f"  Report:  {out_dir / 'comparison.md'}")
+        if not args.no_wav:
+            print(f"  WAVs:    {len(list(out_dir.glob('*.wav')))} files in {out_dir}")
 
-    # Exit non-zero if any iteration died at the session level
-    any_error = any(it.get("error") for s in results for it in s["iterations"])
-    return 1 if any_error else 0
+        # Exit non-zero if any iteration died at the session level
+        any_error = any(it.get("error") for s in results for it in s["iterations"])
+        return 1 if any_error else 0
+    finally:
+        await close_credential()
 
 
 if __name__ == "__main__":
