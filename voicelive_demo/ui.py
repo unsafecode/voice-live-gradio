@@ -812,75 +812,30 @@ def build_ui(
         locale_code = t.get("__locale__", "en")
         if locale_code == "it":
             return f"""
-### Voice Live in un minuto
+### Cos'è questa demo
 
-**Voice Live è Azure OpenAI Realtime + miglioramenti vocali lato server.**
-Lo stesso modello `gpt-realtime` su entrambi i lati del filo, lo stesso
-SDK `openai` Python, la stessa chiamata `client.realtime.connect`.
-L'unica differenza on-wire è che Voice Live sposta una manciata di
-componenti **dall'applicazione al server**:
+Tre modi di parlare con un modello realtime, dietro la **stessa**
+applicazione e lo **stesso** SDK Python `openai`. Premi **Switch** in
+alto per vedere le ~10 righe che cambiano tra un gradino e l'altro;
+tutto il resto (WebRTC, coda audio, transcript, UI) vive in
+`voicelive_demo/handler.py` ed è identico nei tre casi.
 
-| | Realtime | Voice Live |
-|-|-|-|
-| Modello (gpt-realtime, ecc.) | ✅ stesso | ✅ stesso |
-| Forma di chiamata SDK (`client.realtime.connect`) | ✅ stessa | ✅ stessa |
-| VAD / rilevamento turno | tu (`turn_detection` lato client) | **server** (semantic VAD opzionale, modello dedicato) |
-| Barge-in (interruzione) | tu | **server** |
-| Echo cancel + riduzione rumore | tu | **server** |
-| Trascrizione (STT del parlato utente) | tu (Whisper separato) | **server** (`azure-fast-transcription`) |
-| Rendering TTS | voci OpenAI | voci OpenAI **+** Azure Neural HD multilingua |
-| Routing agente (orchestrazione tool) | tu | **server** (con Foundry Agent) |
+| Gradino | Cosa stai chiamando |
+|---|---|
+| Realtime | Azure OpenAI Realtime — modello `gpt-realtime`, WebSocket diretto |
+| Voice Live | Voice Live API — stesso modello, ma con VAD / barge-in / EC / NR / STT lato server |
+| Agent | Voice Live + Foundry Agent ospitato (istruzioni, tool, RAG gestiti dalla piattaforma) |
 
-Tutto ciò che resta a te è invariato: WebRTC al browser, coda audio,
-fan-out della trascrizione nella UI. È quello che vedi in
-`voicelive_demo/handler.py` — **identico per tutti e tre i gradini**.
+Per i dettagli architetturali, le configurazioni di sessione e i
+listini ufficiali, vai alla documentazione Microsoft (link sotto).
 
-### Architettura: NON è una pipeline STT → LLM → TTS
+### Documentazione ufficiale
 
-Equivoco comune. Voice Live **non** è "trascrizione → testo a LLM →
-sintesi vocale" incatenati in serie. Il modello realtime continua a
-fare speech-to-speech nativo (stesso `gpt-realtime`). Le componenti
-server-side (VAD, EC, NR, STT) operano **in parallelo** sul flusso e
-producono *segnali* (eventi WebSocket `input_audio_buffer.*`,
-`conversation.item.input_audio_transcription.completed`, …) che il
-modello realtime già sapeva consumare nell'API Realtime — solo che ora
-non devi più produrli tu.
-
-**La fluidità è vincolata dal modello, non dal wrapper.** Se la
-risposta Realtime ti sembra fluida, Voice Live sulla stessa
-deployment sarà identica.
-
-### Eventi WebSocket che la tua app deve gestire
-
-Per evitare accumulo di latenza, la tua app deve:
-
-1. **Riprodurre `response.audio.delta` immediatamente** — non
-   bufferizzare oltre il chunk corrente. FastRTC (`handler.py`) lo fa
-   per te.
-2. **Svuotare la coda audio su `input_audio_buffer.speech_started`** —
-   è il segnale di barge-in. FastRTC lo fa per te.
-3. **Inviare ack/pong al server** se la libreria non lo fa — `openai`
-   2.x lo gestisce.
-
-Il TTS **streama mentre il testo viene generato** (default in Voice
-Live; controllabile in `session.output_audio.streaming`). Non c'è
-attesa "fino a fine generazione".
-
-### Stato conversazionale
-
-Voice Live mantiene lo stato di conversazione **lato server** (storia
-turni, accumulo audio, transcript). La tua app tiene solo la copia per
-la UI (`gr.Chatbot`). Se ricarichi la pagina, basta una nuova
-`client.realtime.connect()` per ripartire — non devi replay-are nulla.
-
-### Pricing
-
-Voice Live ha un proprio listino pubblico
-([pricing](https://azure.microsoft.com/pricing/details/ai-foundry/))
-distinto da Realtime. Le componenti server-side (VAD, NR, STT, TTS HD)
-sono fatturate separatamente dal token-rate del modello. Per un
-confronto onesto con Realtime nativo: stesso prezzo modello + add-on
-delle augmentations attive.
+- [Voice Live API — overview](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live)
+- [Voice Live API — how to use](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-how-to)
+- [Voice Live API — reference (2025-10-01)](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2025-10-01)
+- [Azure OpenAI Realtime — concepts](https://learn.microsoft.com/azure/ai-services/openai/concepts/realtime-audio) · [how-to](https://learn.microsoft.com/azure/ai-services/openai/how-to/realtime-audio)
+- [Azure AI Foundry — pricing](https://azure.microsoft.com/pricing/details/ai-foundry/)
 
 ### Entry point
 
@@ -902,74 +857,30 @@ delle augmentations attive.
 | Autenticazione | Entra ID via `DefaultAzureCredential` |
 """
         return f"""
-### Voice Live in one minute
+### What this demo shows
 
-**Voice Live is Azure OpenAI Realtime + server-side speech augmentations.**
-The same `gpt-realtime` model on both sides of the wire, the same
-`openai` Python SDK, the same `client.realtime.connect` call. The only
-on-wire difference is that Voice Live moves a handful of components
-**from your app into the platform**:
+Three ways to talk to a realtime model, behind the **same** app and
+the **same** `openai` Python SDK. Hit **Switch** at the top to see the
+~10 lines that change between rungs; everything else (WebRTC, audio
+queue, transcript, UI) lives in `voicelive_demo/handler.py` and is
+identical across all three.
 
-| | Realtime | Voice Live |
-|-|-|-|
-| Model (gpt-realtime, etc.) | ✅ same | ✅ same |
-| SDK call shape (`client.realtime.connect`) | ✅ same | ✅ same |
-| VAD / turn detection | you (client-side `turn_detection`) | **platform** (optional semantic VAD, dedicated model) |
-| Barge-in (interruption) | you | **platform** |
-| Echo cancel + noise reduction | you | **platform** |
-| Transcription (user-speech STT) | you (separate Whisper) | **platform** (`azure-fast-transcription`) |
-| TTS rendering | OpenAI voices | OpenAI voices **+** Azure Neural HD multilingual |
-| Agent routing (tool orchestration) | you | **platform** (with Foundry Agent) |
+| Rung | What you're calling |
+|---|---|
+| Realtime | Azure OpenAI Realtime — `gpt-realtime` model, direct WebSocket |
+| Voice Live | Voice Live API — same model, with VAD / barge-in / EC / NR / STT on the platform |
+| Agent | Voice Live + a hosted Foundry Agent (instructions, tools, RAG owned by the platform) |
 
-What stays with you is unchanged: WebRTC to the browser, audio queue,
-transcript fan-out in the UI. That's what lives in
-`voicelive_demo/handler.py` — **identical across all three rungs**.
+For architecture, session config and pricing, go to the official
+Microsoft docs (links below).
 
-### Architecture: NOT a STT → LLM → TTS pipeline
+### Official documentation
 
-Common misconception. Voice Live is **not** "transcription → text to
-LLM → speech synthesis" chained in series. The realtime model still
-does native speech-to-speech (same `gpt-realtime`). The server-side
-components (VAD, EC, NR, STT) run **alongside** the stream and produce
-*signals* (WebSocket events `input_audio_buffer.*`,
-`conversation.item.input_audio_transcription.completed`, …) the
-realtime model already knew how to consume on the Realtime API — you
-just don't have to produce them yourself anymore.
-
-**Fluidity is bound by the model, not the wrapper.** If the Realtime
-response feels fluid to you, Voice Live on the same deployment will
-feel identical.
-
-### WebSocket events your app must handle
-
-To avoid latency accumulation, your app needs to:
-
-1. **Play `response.audio.delta` immediately** — don't buffer beyond
-   the current chunk. FastRTC (`handler.py`) does this for you.
-2. **Flush the playback queue on `input_audio_buffer.speech_started`**
-   — that's the barge-in signal. FastRTC does this for you.
-3. **Send acks/pongs** if the library doesn't — `openai` 2.x handles
-   this.
-
-TTS **streams as text generates** (default in Voice Live; controlled
-in `session.output_audio.streaming`). There's no "wait until the
-generation completes" blocking.
-
-### Conversation state ownership
-
-Voice Live keeps conversation state **server-side** (turn history,
-audio accumulation, transcript). Your app only holds the UI copy
-(`gr.Chatbot`). If you reload the page, a fresh
-`client.realtime.connect()` is enough to resume — nothing to replay.
-
-### Pricing
-
-Voice Live has its own public pricing
-([pricing](https://azure.microsoft.com/pricing/details/ai-foundry/))
-separate from Realtime. The server-side components (VAD, NR, STT, HD
-TTS) are billed separately from the model token rate. For an honest
-comparison vs raw Realtime: same model price + add-on for the
-augmentations you turn on.
+- [Voice Live API — overview](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live)
+- [Voice Live API — how to use](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-how-to)
+- [Voice Live API — reference (2025-10-01)](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2025-10-01)
+- [Azure OpenAI Realtime — concepts](https://learn.microsoft.com/azure/ai-services/openai/concepts/realtime-audio) · [how-to](https://learn.microsoft.com/azure/ai-services/openai/how-to/realtime-audio)
+- [Azure AI Foundry — pricing](https://azure.microsoft.com/pricing/details/ai-foundry/)
 
 ### Entry points
 
