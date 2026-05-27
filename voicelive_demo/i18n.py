@@ -44,6 +44,29 @@ DEFAULT_VOICE: dict[str, tuple[str, str]] = {
     "it": ("it-IT-IsabellaMultilingualNeural",  "azure-standard"),
 }
 
+# Realtime API voice catalog — locale-independent, OpenAI voice set only.
+# Source: openai SDK `Voice` Literal (`alloy, ash, ballad, coral, echo, sage,
+# shimmer, verse, marin, cedar`). Azure HD voices are NOT supported here;
+# selecting one would be silently ignored by the Realtime endpoint.
+REALTIME_VOICE_OPTIONS: list[tuple[str, str, str]] = [
+    ("Alloy — OpenAI (default)",            "alloy",   "openai"),
+    ("Ash — OpenAI",                        "ash",     "openai"),
+    ("Ballad — OpenAI",                     "ballad",  "openai"),
+    ("Coral — OpenAI",                      "coral",   "openai"),
+    ("Echo — OpenAI",                       "echo",    "openai"),
+    ("Sage — OpenAI",                       "sage",    "openai"),
+    ("Shimmer — OpenAI",                    "shimmer", "openai"),
+    ("Verse — OpenAI",                      "verse",   "openai"),
+    ("Marin — OpenAI (newer models, HQ)",   "marin",   "openai"),
+    ("Cedar — OpenAI (newer models, HQ)",   "cedar",   "openai"),
+]
+
+REALTIME_DEFAULT_VOICE: tuple[str, str] = ("alloy", "openai")
+
+REALTIME_VOICE_NAMES: frozenset[str] = frozenset(
+    name for (_label, name, _vtype) in REALTIME_VOICE_OPTIONS
+)
+
 # Whisper / azure-fast-transcription both accept ISO 639-1 here.
 TRANSCRIPTION_LANGUAGE: dict[str, str] = {
     "en": "en",
@@ -77,6 +100,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "instructions":         "System instructions",
         "apply":                "Apply",
         "reset":                "Reset",
+        "voice_hint_realtime":  "Realtime uses the OpenAI voice set (alloy, ash, ballad, …). Switch to <b>Voice Live</b> for Azure Neural HD voices.",
+        "voice_hint_voicelive": "Voice Live serves Azure Neural HD voices (locale-specific). OpenAI voices stay available too.",
         "connection":           "Connection",
         "backend_details":      "Backend details",
         "no_session":           "_No active session._",
@@ -119,6 +144,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "instructions":         "Istruzioni di sistema",
         "apply":                "Applica",
         "reset":                "Reimposta",
+        "voice_hint_realtime":  "Realtime usa il set di voci OpenAI (alloy, ash, ballad, …). Passa a <b>Voice Live</b> per le voci Azure Neural HD.",
+        "voice_hint_voicelive": "Voice Live offre voci Azure Neural HD (specifiche per la lingua). Le voci OpenAI restano disponibili.",
         "connection":           "Connessione",
         "backend_details":      "Dettagli backend",
         "no_session":           "_Nessuna sessione attiva._",

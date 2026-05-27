@@ -19,6 +19,8 @@ from voicelive_demo.i18n import (
     DEFAULT_INSTRUCTIONS,
     DEFAULT_VOICE,
     LOCALES,
+    REALTIME_DEFAULT_VOICE,
+    REALTIME_VOICE_OPTIONS,
     RUNG_BLURBS,
     STATUS_LABELS,
     STRINGS,
@@ -38,14 +40,38 @@ STATUS_COLORS = {
 VOICE_OPTIONS_FOR = VOICE_OPTIONS  # re-export for readability
 
 
-def _voice_choices(locale: str) -> list[tuple[str, str]]:
-    """The voice picker shows (label, voice-name) pairs — locale-aware."""
-    return [(label, name) for (label, name, _vtype) in VOICE_OPTIONS[locale]]
+def _voices_for_mode(mode: Mode, locale: str) -> list[tuple[str, str, str]]:
+    """Pick the voice catalog appropriate for the active rung.
+
+    Realtime API only accepts the OpenAI voice set (locale-independent).
+    Voice Live + Agent serve Azure Neural HD voices per locale.
+    """
+    if mode == Mode.REALTIME:
+        return REALTIME_VOICE_OPTIONS
+    return VOICE_OPTIONS[locale]
 
 
-def _voice_type_lookup(locale: str) -> dict[str, str]:
+def _voice_choices(mode: Mode, locale: str) -> list[tuple[str, str]]:
+    """The voice picker shows (label, voice-name) pairs — mode + locale aware."""
+    return [(label, name) for (label, name, _vtype) in _voices_for_mode(mode, locale)]
+
+
+def _voice_type_lookup(mode: Mode, locale: str) -> dict[str, str]:
     """voice_name → voice_type so the rung can set the right session field."""
-    return {name: vtype for (_label, name, vtype) in VOICE_OPTIONS[locale]}
+    return {name: vtype for (_label, name, vtype) in _voices_for_mode(mode, locale)}
+
+
+def _default_voice_for(mode: Mode, locale: str) -> tuple[str, str]:
+    """The voice the picker snaps to when the active rung changes."""
+    if mode == Mode.REALTIME:
+        return REALTIME_DEFAULT_VOICE
+    return DEFAULT_VOICE[locale]
+
+
+def _voice_hint_html(mode: Mode, t: dict[str, str]) -> str:
+    """One-line caption under the voice picker explaining which voice set is live."""
+    key = "voice_hint_realtime" if mode == Mode.REALTIME else "voice_hint_voicelive"
+    return f'<div class="vl-voice-hint">{t[key]}</div>'
 
 
 def _short_endpoint(endpoint: str) -> str:
@@ -606,6 +632,13 @@ body, gradio-app { background: var(--vl-bg) !important; color: var(--vl-text) !i
     text-overflow: ellipsis !important;
     overflow: hidden !important;
 }
+.vl-voice-hint {
+    margin: 4px 2px 0;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--vl-text-muted);
+}
+.vl-voice-hint b { color: var(--vl-text); font-weight: 600; }
 
 /* ── Switch-diff (minimal view) ────────────────────────────────────── */
 .vlx-root { display: flex; flex-direction: column; gap: 28px; }
@@ -794,8 +827,13 @@ def build_ui(
     initial_locale = shared.locale
     t = STRINGS[initial_locale]
 
-    # Sync defaults to the locale's voice + instructions.
-    default_voice_name, default_voice_type = DEFAULT_VOICE[initial_locale]
+    # Sync defaults to the active rung + locale. The voice catalog depends
+    # on which rung is live (Realtime → OpenAI voice set; Voice Live/Agent →
+    # Azure Neural HD), so use _default_voice_for() instead of indexing
+    # DEFAULT_VOICE directly.
+    default_voice_name, default_voice_type = _default_voice_for(
+        initial_rung.mode, initial_locale
+    )
     shared.voice = default_voice_name
     shared.voice_type = default_voice_type
     shared.instructions = DEFAULT_INSTRUCTIONS[initial_locale]
@@ -1031,11 +1069,14 @@ Microsoft docs (links below).
                         settings_title_html = gr.HTML(_section_title_html(t["settings"]))
                         with gr.Group():
                             voice = gr.Dropdown(
-                                choices=_voice_choices(initial_locale),
+                                choices=_voice_choices(initial_rung.mode, initial_locale),
                                 value=shared.voice,
                                 label=t["voice"],
                                 interactive=True,
                                 elem_classes="vl-voice-picker",
+                            )
+                            voice_hint_html = gr.HTML(
+                                _voice_hint_html(initial_rung.mode, t)
                             )
                             instructions = gr.Textbox(
                                 value=shared.instructions,
@@ -1067,7 +1108,10 @@ Microsoft docs (links below).
 
                 def _apply_settings(v: str, ins: str) -> str:
                     shared.voice = v
-                    shared.voice_type = _voice_type_lookup(shared.locale).get(v, "azure-standard")
+                    current_mode = shared.mode or initial_rung.mode
+                    shared.voice_type = _voice_type_lookup(current_mode, shared.locale).get(
+                        v, "azure-standard"
+                    )
                     shared.instructions = ins
                     return _status_html("idle", shared.locale)
 
@@ -1105,12 +1149,30 @@ Microsoft docs (links below).
                     handler.name = target_rung.mode.value
                     shared.mode = target_rung.mode
 
+                    # The voice catalog differs across rungs (Realtime = OpenAI
+                    # voice set; Voice Live/Agent = Azure Neural HD). If the
+                    # currently-selected voice doesn't exist in the new rung's
+                    # catalog, snap to the rung's default so the picker never
+                    # shows a phantom value the backend would silently ignore.
+                    valid_voices = {
+                        name for (_l, name, _t) in _voices_for_mode(target_mode, shared.locale)
+                    }
+                    if shared.voice not in valid_voices:
+                        v_name, v_type = _default_voice_for(target_mode, shared.locale)
+                        shared.voice = v_name
+                        shared.voice_type = v_type
+
                     t_cur = STRINGS[shared.locale]
                     dest_out = _destination_html(target_rung, settings, t_cur)
                     blurb_out = _blurb_html(target_rung, shared.locale)
                     session_out = (
                         f"_{t_cur['switched_to']} **{target_rung.label}**. {t_cur['click_mic']}._"
                     )
+                    voice_update = gr.update(
+                        choices=_voice_choices(target_mode, shared.locale),
+                        value=shared.voice,
+                    )
+                    voice_hint_out = _voice_hint_html(target_mode, t_cur)
                     button_updates = tuple(
                         gr.update(
                             variant="primary" if r.mode == target_mode else "secondary",
@@ -1122,11 +1184,25 @@ Microsoft docs (links below).
                         )
                         for r in rungs
                     )
-                    return (dest_out, blurb_out, session_out, *button_updates)
+                    return (
+                        dest_out,
+                        blurb_out,
+                        session_out,
+                        voice_update,
+                        voice_hint_out,
+                        *button_updates,
+                    )
 
                 return _switch
 
-            outputs = [destination_html, mode_blurb_html, session_info, *mode_picker_buttons.values()]
+            outputs = [
+                destination_html,
+                mode_blurb_html,
+                session_info,
+                voice,
+                voice_hint_html,
+                *mode_picker_buttons.values(),
+            ]
             for mode_key, btn in mode_picker_buttons.items():
                 btn.click(fn=_make_switch_handler(mode_key), inputs=None, outputs=outputs)
 
@@ -1134,10 +1210,12 @@ Microsoft docs (links below).
         def _make_locale_handler(target_locale: str):
             def _change_locale() -> tuple:
                 shared.locale = target_locale
-                # Reset voice + instructions to the locale's defaults so the
-                # demo sounds right out of the gate. (Customer can still
-                # tweak after — the textboxes stay editable.)
-                voice_name, voice_type = DEFAULT_VOICE[target_locale]
+                current_mode = shared.mode or initial_rung.mode
+                # Reset voice + instructions to the (mode, locale) defaults so
+                # the demo sounds right out of the gate. For Realtime the
+                # catalog is locale-independent, so this snaps to alloy; for
+                # Voice Live / Agent it snaps to the locale's HD default.
+                voice_name, voice_type = _default_voice_for(current_mode, target_locale)
                 shared.voice = voice_name
                 shared.voice_type = voice_type
                 shared.instructions = DEFAULT_INSTRUCTIONS[target_locale]
@@ -1167,10 +1245,11 @@ Microsoft docs (links below).
                     _section_title_html(tt["settings"], top=0),
                     _section_title_html(tt["connection"], top=18),
                     gr.update(
-                        choices=_voice_choices(target_locale),
+                        choices=_voice_choices(current_mode, target_locale),
                         value=voice_name,
                         label=tt["voice"],
                     ),
+                    _voice_hint_html(current_mode, tt),
                     gr.update(value=shared.instructions, label=tt["instructions"]),
                     gr.update(value=tt["apply"]),
                     gr.update(value=tt["reset"]),
@@ -1199,6 +1278,7 @@ Microsoft docs (links below).
             settings_title_html,
             connection_title_html,
             voice,
+            voice_hint_html,
             instructions,
             apply_btn,
             reset_btn,

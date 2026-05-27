@@ -15,15 +15,24 @@ from openai import AsyncAzureOpenAI
 
 from voicelive_demo.config import azure_ad_token_provider, get_settings
 from voicelive_demo.handler import SharedState
+from voicelive_demo.i18n import REALTIME_VOICE_NAMES
 
 
 def make_session(shared: SharedState) -> dict:
-    """Session config sent on every (re)connection."""
+    """Session config sent on every (re)connection.
+
+    The Realtime API accepts only the OpenAI voice set (alloy, ash, ballad,
+    coral, echo, sage, shimmer, verse, marin, cedar). Anything else gets
+    filtered down to ``alloy`` so a stale Voice Live voice selection can't
+    blow up the connection during a rung switch — the UI also snaps the
+    picker to a valid value, so this is belt-and-braces.
+    """
+    voice = shared.voice if shared.voice in REALTIME_VOICE_NAMES else "alloy"
     return {
         "turn_detection": {"type": "server_vad"},
         "input_audio_format": "pcm16",
         "output_audio_format": "pcm16",
-        "voice": "alloy",  # Realtime API supports the openai voice set only
+        "voice": voice,
         "instructions": shared.instructions,
         "modalities": ["text", "audio"],
         "input_audio_transcription": {
