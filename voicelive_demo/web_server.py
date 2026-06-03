@@ -216,6 +216,12 @@ async def _pump_upstream(conn: Any, websocket: WebSocket, rung: str) -> None:
     async for event in conn:
         etype = getattr(event, "type", "?")
 
+        # Verbose event-type trace — helps diagnose stray "ANSWER"-style
+        # transcripts and other model surprises in the deployed shell.
+        # Skip the binary-firehose deltas so the logs stay readable.
+        if etype not in ("response.audio.delta", "response.output_audio.delta"):
+            logger.info("[%s] event=%s", rung, etype)
+
         if etype == "session.created":
             sess = getattr(event, "session", None)
             sid = getattr(sess, "id", "?") if sess else "?"
@@ -232,13 +238,24 @@ async def _pump_upstream(conn: Any, websocket: WebSocket, rung: str) -> None:
 
         elif etype == "conversation.item.input_audio_transcription.completed":
             transcript = getattr(event, "transcript", "")
+            logger.info("[%s] user transcript len=%d preview=%r", rung, len(transcript), transcript[:80])
             if transcript:
                 await _send_json(websocket, {"type": "message", "role": "user", "content": transcript})
 
         elif etype in ("response.audio_transcript.done", "response.output_audio_transcript.done"):
             transcript = getattr(event, "transcript", "")
+            logger.info("[%s] assistant audio_transcript len=%d preview=%r", rung, len(transcript), transcript[:120])
             if transcript:
                 await _send_json(websocket, {"type": "message", "role": "assistant", "content": transcript})
+
+        # Text-modality response — fires when the model emits a parallel text-only
+        # output alongside the audio. On gpt-realtime-1.5 this is sometimes a
+        # *different* string from the audio transcript (e.g. a structured
+        # "answer" wrapper). Drop it on the floor: the audio_transcript above
+        # is the source of truth for what the user actually heard.
+        elif etype in ("response.text.done", "response.output_text.done"):
+            text = getattr(event, "text", "")
+            logger.info("[%s] response.text (suppressed) len=%d preview=%r", rung, len(text), text[:120])
 
         elif etype in ("response.audio.delta", "response.output_audio.delta"):
             delta = getattr(event, "delta", None)
