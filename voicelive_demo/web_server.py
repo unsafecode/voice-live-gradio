@@ -35,6 +35,13 @@ from fastapi.staticfiles import StaticFiles
 
 from voicelive_demo.config import Mode, get_settings
 from voicelive_demo.handler import SharedState
+from voicelive_demo.i18n import (
+    DEFAULT_VOICE,
+    LOCALES,
+    REALTIME_DEFAULT_VOICE,
+    REALTIME_VOICE_OPTIONS,
+    VOICE_OPTIONS,
+)
 from voicelive_demo.rungs import agent as agent_rung
 from voicelive_demo.rungs import realtime as realtime_rung
 from voicelive_demo.rungs import voicelive as voicelive_rung
@@ -74,10 +81,25 @@ def create_app() -> FastAPI:
     @app.get("/api/config")
     async def api_config() -> dict:
         s = get_settings()
+
+        def _voices(opts):
+            return [{"label": lbl, "name": n, "type": t} for (lbl, n, t) in opts]
+
         return {
             "rungs": _available_rungs(),
             "default_rung": s.mode.value if s.mode in (Mode.REALTIME, Mode.VOICELIVE, Mode.AGENT) else "voicelive",
-            "default_voice": "en-US-Ava:DragonHDLatestNeural",
+            "locales": [{"label": label, "code": code} for (label, code) in LOCALES],
+            "default_locale": "en",
+            # Voice Live + Foundry Agent rungs share the Azure Neural / HD catalog.
+            "azure_voices": {loc: _voices(opts) for loc, opts in VOICE_OPTIONS.items()},
+            "default_azure_voice": {
+                loc: {"name": name, "type": vtype} for loc, (name, vtype) in DEFAULT_VOICE.items()
+            },
+            # Realtime rung is locked to the OpenAI voice set (no Azure HD).
+            "openai_voices": _voices(REALTIME_VOICE_OPTIONS),
+            "default_openai_voice": {
+                "name": REALTIME_DEFAULT_VOICE[0], "type": REALTIME_DEFAULT_VOICE[1],
+            },
         }
 
     @app.websocket("/ws/{rung}")

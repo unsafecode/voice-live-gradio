@@ -21,6 +21,15 @@
         <legend>Rung</legend>
       </fieldset>
 
+      <fieldset class="rungs" id="locales" disabled>
+        <legend>Language</legend>
+      </fieldset>
+
+      <div class="voice-row">
+        <label for="voice">Voice</label>
+        <select id="voice" disabled></select>
+      </div>
+
       <div class="actions">
         <button id="connectBtn" type="button" disabled>Connect</button>
         <button id="disconnectBtn" type="button" disabled>Disconnect</button>
@@ -29,8 +38,7 @@
 
       <details class="advanced">
         <summary>System instructions (rungs 1 &amp; 2)</summary>
-        <textarea id="instructions" rows="4" placeholder="System prompt..."
->You are a friendly, concise voice assistant. Keep replies short — under 2 sentences unless the user explicitly asks for more. Speak naturally.</textarea>
+        <textarea id="instructions" rows="4" placeholder="System prompt..."></textarea>
         <p class="hint">Rung 3 ignores this — the Foundry Agent owns its own instructions.</p>
       </details>
     </section>

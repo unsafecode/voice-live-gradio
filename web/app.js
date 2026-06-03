@@ -7,6 +7,8 @@ const SAMPLE_RATE = 24000;
 
 const els = {
   rungs: document.getElementById("rungs"),
+  locales: document.getElementById("locales"),
+  voice: document.getElementById("voice"),
   connect: document.getElementById("connectBtn"),
   disconnect: document.getElementById("disconnectBtn"),
   status: document.getElementById("status"),
@@ -20,6 +22,11 @@ const RUNG_LABELS = {
   agent: "Voice Live + Foundry Agent",
 };
 
+const DEFAULT_INSTRUCTIONS = {
+  en: "You are a friendly, concise voice assistant. Keep replies short — under 2 sentences unless the user explicitly asks for more. Speak naturally.",
+  it: "Sei un assistente vocale amichevole e conciso. Rispondi sempre in italiano. Mantieni le risposte brevi — meno di 2 frasi, a meno che l'utente non chieda esplicitamente di più. Parla in modo naturale.",
+};
+
 const state = {
   ws: null,
   audioCtx: null,
@@ -27,6 +34,10 @@ const state = {
   recorderNode: null,
   playerNode: null,
   connected: false,
+  cfg: null,
+  // Track which locale generated the current instructions textarea content
+  // so a language switch can refresh it without nuking user edits.
+  instructionsLocale: null,
 };
 
 function setStatus(status) {
@@ -67,6 +78,7 @@ function buildRungRadios(rungs, defaultRung) {
     input.id = id;
     input.value = rung;
     if (rung === defaultRung) input.checked = true;
+    input.addEventListener("change", refreshVoiceOptions);
     const span = document.createElement("span");
     span.textContent = RUNG_LABELS[rung] ?? rung;
     label.appendChild(input);
@@ -74,12 +86,96 @@ function buildRungRadios(rungs, defaultRung) {
     els.rungs.appendChild(label);
   });
   els.rungs.disabled = false;
-  els.connect.disabled = false;
+}
+
+function buildLocaleRadios(locales, defaultLocale) {
+  els.locales.innerHTML = "<legend>Language</legend>";
+  locales.forEach(({ label: lbl, code }) => {
+    const id = `loc-${code}`;
+    const label = document.createElement("label");
+    label.setAttribute("for", id);
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "locale";
+    input.id = id;
+    input.value = code;
+    if (code === defaultLocale) input.checked = true;
+    input.addEventListener("change", () => {
+      refreshVoiceOptions();
+      refreshInstructions();
+    });
+    const span = document.createElement("span");
+    span.textContent = lbl;
+    label.appendChild(input);
+    label.appendChild(span);
+    els.locales.appendChild(label);
+  });
+  els.locales.disabled = false;
 }
 
 function selectedRung() {
-  const checked = els.rungs.querySelector('input[name="rung"]:checked');
-  return checked?.value ?? "voicelive";
+  return els.rungs.querySelector('input[name="rung"]:checked')?.value ?? "voicelive";
+}
+
+function selectedLocale() {
+  return els.locales.querySelector('input[name="locale"]:checked')?.value ?? "en";
+}
+
+function voicesForCurrent() {
+  const rung = selectedRung();
+  const locale = selectedLocale();
+  if (rung === "realtime") {
+    return { list: state.cfg.openai_voices, defaultVoice: state.cfg.default_openai_voice };
+  }
+  return {
+    list: state.cfg.azure_voices[locale] ?? state.cfg.azure_voices.en,
+    defaultVoice: state.cfg.default_azure_voice[locale] ?? state.cfg.default_azure_voice.en,
+  };
+}
+
+function refreshVoiceOptions() {
+  if (!state.cfg) return;
+  const { list, defaultVoice } = voicesForCurrent();
+  els.voice.innerHTML = "";
+  list.forEach((v) => {
+    const opt = document.createElement("option");
+    opt.value = `${v.name}|${v.type}`;
+    opt.textContent = v.label;
+    if (v.name === defaultVoice.name && v.type === defaultVoice.type) {
+      opt.selected = true;
+    }
+    els.voice.appendChild(opt);
+  });
+  els.voice.disabled = false;
+}
+
+function refreshInstructions() {
+  const locale = selectedLocale();
+  const current = els.instructions.value.trim();
+  const previousDefault = state.instructionsLocale
+    ? DEFAULT_INSTRUCTIONS[state.instructionsLocale]
+    : null;
+  // Only replace if the user hasn't typed their own prompt
+  if (!current || current === previousDefault) {
+    els.instructions.value = DEFAULT_INSTRUCTIONS[locale] ?? DEFAULT_INSTRUCTIONS.en;
+    state.instructionsLocale = locale;
+  }
+}
+
+function detectBrowserLocale(supported) {
+  const codes = supported.map((l) => l.code);
+  const nav = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || "en"])
+    .map((s) => (s || "").toLowerCase().split(/[-_]/)[0]);
+  return nav.find((c) => codes.includes(c)) ?? "en";
+}
+
+function selectedVoicePayload() {
+  const [name, type] = (els.voice.value || "").split("|");
+  if (!name) {
+    const { defaultVoice } = voicesForCurrent();
+    return { voice: defaultVoice.name, voice_type: defaultVoice.type };
+  }
+  return { voice: name, voice_type: type };
 }
 
 async function ensureAudio() {
@@ -145,6 +241,9 @@ async function connect() {
   }
 
   const rung = selectedRung();
+  const locale = selectedLocale();
+  const { voice, voice_type } = selectedVoicePayload();
+
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
   const url = `${wsProto}://${location.host}/ws/${rung}`;
   const ws = new WebSocket(url);
@@ -154,9 +253,9 @@ async function connect() {
   ws.onopen = async () => {
     ws.send(JSON.stringify({
       type: "config",
-      voice: "en-US-Ava:DragonHDLatestNeural",
-      voice_type: "azure-standard",
-      locale: "en",
+      voice,
+      voice_type,
+      locale,
       instructions: els.instructions.value.trim() || undefined,
     }));
     try {
@@ -164,6 +263,8 @@ async function connect() {
       state.connected = true;
       els.disconnect.disabled = false;
       els.rungs.disabled = true;
+      els.locales.disabled = true;
+      els.voice.disabled = true;
     } catch (err) {
       console.error("mic start failed", err);
       setStatus("error");
@@ -208,6 +309,8 @@ async function connect() {
     els.connect.disabled = false;
     els.disconnect.disabled = true;
     els.rungs.disabled = false;
+    els.locales.disabled = false;
+    els.voice.disabled = false;
     setStatus("offline");
   };
 }
@@ -222,7 +325,13 @@ function disconnect() {
   setStatus("offline");
   try {
     const cfg = await loadConfig();
+    state.cfg = cfg;
+    const browserLocale = detectBrowserLocale(cfg.locales);
     buildRungRadios(cfg.rungs, cfg.default_rung);
+    buildLocaleRadios(cfg.locales, browserLocale);
+    refreshVoiceOptions();
+    refreshInstructions();
+    els.connect.disabled = false;
   } catch (err) {
     console.error("could not load config", err);
     setStatus("error");

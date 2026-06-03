@@ -159,6 +159,35 @@ button:disabled {
   margin-top: 1rem;
 }
 
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  flex-wrap: wrap;
+}
+
+.voice-row label {
+  font-weight: 600;
+}
+
+.voice-row select {
+  flex: 1 1 280px;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.voice-row select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .advanced textarea {
   width: 100%;
   margin-top: 0.5rem;
