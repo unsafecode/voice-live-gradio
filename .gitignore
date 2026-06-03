@@ -209,3 +209,6 @@ __marimo__/
 # benchmark output (recordings + metrics)
 benchmark/results/
 
+
+# azd local state — environment-specific, never commit
+.azure/
