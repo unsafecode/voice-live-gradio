@@ -7,6 +7,11 @@
 
 ![Audio chatbot UI with status badges, voice picker, and a "View the diff" tab.](image.png)
 
+> **🚀 Just want to run the demo for a customer?** Jump straight to
+> [**docs/PEER_SETUP.md**](docs/PEER_SETUP.md) — a single self-contained,
+> copy-pasteable 5-minute guide that covers Foundry provisioning, role
+> assignment, local install, and how to share over Teams.
+
 ## What's in the box
 
 ```
@@ -240,6 +245,30 @@ uv run python -m benchmark.run --scenarios voicelive:gpt-5-mini voicelive:gpt-4o
 
 See [`benchmark/README.md`](benchmark/README.md) for the full matrix
 syntax, output layout, and caveats.
+
+## Hosting
+
+**This demo is intentionally laptop-only.** It uses FastRTC, which is
+WebRTC end-to-end — and WebRTC media flows over UDP. Azure Container
+Apps (and every other L7 PaaS ingress in Azure) only proxies
+TCP/HTTPS/WS, so the server-side ICE candidate is unreachable from the
+browser and the call hangs at "Connecting…" forever.
+
+We investigated **Azure Communication Services Network Traversal** as
+a managed TURN provider; turns out it's deprecated (scream-tested
+Oct 2025, full retirement Oct 31 2026) and the data-plane already
+returns `404 Page not found`. The full investigation, what works, what
+doesn't, and the smallest "make it actually hosted" path (self-hosted
+coturn on an Azure VM, ≈$8/mo) is preserved on the
+[`feat/azure-deploy`](https://github.com/unsafecode/voice-live-gradio/tree/feat/azure-deploy)
+branch under [`infra/POSTMORTEM.md`](https://github.com/unsafecode/voice-live-gradio/blob/feat/azure-deploy/infra/POSTMORTEM.md).
+
+For sharing the demo with a peer or customer, the right shape is:
+
+1. Each demo-er runs the app on their own laptop — see [docs/PEER_SETUP.md](docs/PEER_SETUP.md)
+2. Screen-share the browser tab in Teams with **Include sound** ticked
+3. WebRTC works because everything is on `localhost` — no TURN, no
+   external infra, no surprise bills
 
 ## Resources
 
