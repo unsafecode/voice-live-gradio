@@ -86,6 +86,19 @@ module acrRbac './modules/acr-rbac.bicep' = {
   }
 }
 
+// ACS resource that mints TURN credentials for FastRTC on ACA. Without
+// this, the WebRTC widget hangs at "Connecting…" on remote browsers
+// because ACA ingress doesn't forward arbitrary inbound UDP.
+module acs './modules/acs.bicep' = {
+  name: 'acs'
+  scope: rg
+  params: {
+    name: 'acs-${environmentName}'
+    tags: baseTags
+    uamiPrincipalId: identity.outputs.principalId
+  }
+}
+
 // Foundry RBAC lives in rg-infra (with the Foundry account).
 module foundryRbac './modules/foundry-rbac.bicep' = {
   name: 'foundry-rbac'
@@ -97,9 +110,10 @@ module foundryRbac './modules/foundry-rbac.bicep' = {
   }
 }
 
-// `dependsOn: [acrRbac, foundryRbac]` pre-empts the 30-60s RBAC propagation
-// race that bricks the first revision when AcrPull lands after the image
-// pull is attempted.
+// `dependsOn: [acrRbac, foundryRbac]` pre-empts the 30-60s RBAC
+// propagation race that bricks the first revision when AcrPull lands
+// after the image pull is attempted. The ACS dependency is implicit
+// via `acsEndpoint: acs.outputs.endpoint` so we don't list it here.
 module app './modules/app.bicep' = {
   name: 'app'
   scope: rg
@@ -119,6 +133,7 @@ module app './modules/app.bicep' = {
     foundryRealtimeDeployment: foundryRealtimeDeployment
     agentProjectName: agentProjectName
     agentId: agentId
+    acsEndpoint: acs.outputs.endpoint
   }
 }
 
@@ -131,3 +146,5 @@ output APP_URL string = 'https://${app.outputs.fqdn}'
 output AZURE_CLIENT_ID string = identity.outputs.clientId
 output AZURE_OPENAI_ENDPOINT string = 'https://${foundryAccountName}.openai.azure.com'
 output AZURE_VOICELIVE_ENDPOINT string = 'wss://${foundryAccountName}.services.ai.azure.com/voice-live'
+output ACS_ENDPOINT string = acs.outputs.endpoint
+output ACS_NAME string = acs.outputs.name

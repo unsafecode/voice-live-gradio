@@ -11,15 +11,18 @@ mic, the new rung's WebSocket destination is dialled. No restart needed.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from voicelive_demo.config import Mode, get_settings
 from voicelive_demo.handler import SharedState, VoiceHandler
+from voicelive_demo.rtc import fetch_acs_turn_config
 from voicelive_demo.rungs import REGISTRY
 from voicelive_demo.ui import build_ui
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 _settings = get_settings()
+_rtc_configuration = asyncio.run(fetch_acs_turn_config())
 
 _AVAILABLE: list[Mode] = [Mode.REALTIME, Mode.VOICELIVE]
 if _settings.agent_id and _settings.agent_project_name:
@@ -46,6 +49,7 @@ demo = build_ui(
     settings=_settings,
     shared=SHARED,
     handler=handler,
+    rtc_configuration=_rtc_configuration,
 )
 
 if __name__ == "__main__":

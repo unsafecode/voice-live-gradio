@@ -1050,6 +1050,13 @@ Microsoft docs (links below).
                                 modality="audio",
                                 mode="send-receive",
                                 rtc_configuration=rtc_configuration,
+                                # ACA ingress has no inbound UDP; the
+                                # server-side aiortc PeerConnection needs
+                                # the *same* TURN bundle so its candidates
+                                # are reachable from the browser. Without
+                                # this, only the browser knows about TURN
+                                # and ICE still fails on remote networks.
+                                server_rtc_configuration=rtc_configuration,
                                 icon_button_color="#0078D4",
                                 pulse_color="#d63384",
                                 full_screen=False,

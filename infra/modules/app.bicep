@@ -17,6 +17,9 @@ param foundryRealtimeDeployment string
 param agentProjectName string = ''
 param agentId string = ''
 
+@description('ACS endpoint (https://<resource>.<region>.communication.azure.com) used by voicelive_demo/rtc.py to mint TURN credentials. Leave blank to disable TURN (only works on localhost; ACA needs TURN).')
+param acsEndpoint string = ''
+
 @description('Image to start with. azd deploy will patch this to the real ACR image right after provision.')
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
@@ -109,7 +112,8 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
               { name: 'AZURE_AI_SCOPE', value: 'https://ai.azure.com/.default' }
             ],
             !empty(agentProjectName) ? [{ name: 'AGENT_PROJECT_NAME', value: agentProjectName }] : [],
-            !empty(agentId) ? [{ name: 'AGENT_ID', value: agentId }] : []
+            !empty(agentId) ? [{ name: 'AGENT_ID', value: agentId }] : [],
+            !empty(acsEndpoint) ? [{ name: 'ACS_ENDPOINT', value: acsEndpoint }] : []
           )
           probes: [
             {
