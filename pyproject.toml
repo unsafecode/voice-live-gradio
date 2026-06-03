@@ -18,3 +18,9 @@ dependencies = [
 
 [dependency-groups]
 dev = []
+# Pulled in only when peers want to provision the optional Foundry
+# Agent for rung 3. Keeps the runtime container slim. Install via:
+#     uv sync --group provision
+provision = [
+    "azure-ai-projects~=2.1.0",
+]

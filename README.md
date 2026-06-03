@@ -11,6 +11,11 @@
 > [**docs/PEER_SETUP.md**](docs/PEER_SETUP.md) — a single self-contained,
 > copy-pasteable 5-minute guide that covers Foundry provisioning, role
 > assignment, local install, and how to share over Teams.
+>
+> Want to demo the third rung (Voice Live + a hosted Foundry Agent
+> grounded with file search)? Follow up with
+> [**docs/AGENT_SETUP.md**](docs/AGENT_SETUP.md) — another 5 minutes to
+> create the agent in your Foundry project.
 
 ## What's in the box
 

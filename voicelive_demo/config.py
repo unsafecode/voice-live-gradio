@@ -59,6 +59,16 @@ class Settings(BaseSettings):
 
     agent_project_name: Optional[str] = Field(None, alias="AGENT_PROJECT_NAME")
     agent_id: Optional[str] = Field(None, alias="AGENT_ID")
+    agent_model: str = Field(
+        "gpt-4.1-mini",
+        alias="AGENT_MODEL",
+        description=(
+            "Chat-completion model deployment that backs the Foundry Prompt "
+            "Agent used by rung 3. Separate from the realtime model in "
+            "AZURE_OPENAI_DEPLOYMENT_NAME — Voice Live wraps STT/TTS around "
+            "this reasoning model. Used only by the provisioner script."
+        ),
+    )
 
     api_version_realtime: str = Field("2025-04-01-preview", alias="AZURE_OPENAI_API_VERSION")
     api_version_voicelive: str = Field("2025-10-01", alias="AZURE_VOICELIVE_API_VERSION")
