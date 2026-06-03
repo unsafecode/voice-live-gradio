@@ -1,0 +1,46 @@
+# Build output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Python venv — never copy a host venv into the image
+.venv/
+venv/
+
+# Build artefacts
+build/
+dist/
+*.egg-info/
+
+# Git
+.git/
+.gitignore
+
+# Local tooling
+.vscode/
+.idea/
+
+# azd local state — never commit
+.azure/
+
+# Local secrets — never commit
+.env
+.env.local
+
+# Editor scratch
+*.log
+*.tmp
+.DS_Store
+
+# Benchmark output (regenerated)
+benchmark/results/
+benchmark/runs/
+
+# CI configs not needed at runtime
+.github/
+
+# Documentation source not needed at runtime
+README.md
+AGENTS.md
+CHANGELOG.md
+docs/

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: voice-live-gradio
+metadata:
+  template: voice-live-gradio@0.1.0
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  app:
+    project: .
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: .
+      remoteBuild: true

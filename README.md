@@ -241,6 +241,116 @@ uv run python -m benchmark.run --scenarios voicelive:gpt-5-mini voicelive:gpt-4o
 See [`benchmark/README.md`](benchmark/README.md) for the full matrix
 syntax, output layout, and caveats.
 
+## Deploy to Azure
+
+The repo ships with an `azd` template that puts the unified demo on a
+single Azure Container App, fronted by HTTPS, no keys involved. **Reuses
+an existing Foundry resource** — does not provision one, so you keep
+your model deployment, quota, and region exactly where they are.
+
+What gets created in your subscription:
+
+```
+rg-<env>
+├─ id-<env>            UAMI (DefaultAzureCredential identity)
+├─ law-<env>           Log Analytics workspace
+├─ cae-<env>           Container Apps environment
+├─ cr<env><hash>       Azure Container Registry
+└─ ca-<env>            Container App (single replica, port 7860)
+```
+
+Plus three role assignments on your existing Foundry account: the UAMI
+gets `Cognitive Services User`, `Cognitive Services OpenAI User`, and
+`Azure AI User` so it can mint tokens for Realtime, Voice Live, and the
+Agent rung.
+
+### Prerequisites
+
+- `azd` 1.20+ (`brew install azure-dev`)
+- `az` CLI logged into the right tenant — see "Multi-tenant note" below
+- An existing Azure AI Foundry / Cognitive Services account with a
+  realtime model deployed (e.g. `gpt-realtime-2`). Note its resource
+  group + account name.
+
+### One-time setup
+
+```bash
+azd env new voice-live-demo --location swedencentral --subscription <your-sub-id>
+
+# Point at your existing Foundry account
+azd env set AZURE_FOUNDRY_ACCOUNT_NAME       "<your-foundry-account>"
+azd env set AZURE_FOUNDRY_RESOURCE_GROUP     "<rg-that-holds-the-foundry-account>"
+azd env set AZURE_FOUNDRY_REALTIME_DEPLOYMENT "gpt-realtime-2"
+# Optional — fills AGENT_PROJECT_NAME / AGENT_ID env vars in the container
+# so the Agent rung shows up. Leave unset to hide that tab.
+# azd env set AGENT_PROJECT_NAME "<your-foundry-project>"
+# azd env set AGENT_ID           "<your-agent-id>"
+
+# Optional — flip to false in a customer-owned (non-MCAPS) subscription
+# so we don't slap `SecurityControl: Ignore` on the RG.
+# azd env set MCAPS_PILOT_POSTURE false
+```
+
+### Deploy
+
+```bash
+azd up
+```
+
+This builds the Dockerfile in ACR (remote build, no local Docker
+needed), provisions the infra, and deploys the image. End-to-end takes
+roughly 8–10 minutes on a cold subscription.
+
+When it finishes, `azd` prints the FQDN — open it in a browser, click
+through the cookie banner, allow microphone access, and start talking.
+
+### Verify the deploy is healthy
+
+```bash
+RG=$(azd env get-value AZURE_RESOURCE_GROUP)
+APP=$(az containerapp list -g "$RG" --query "[0].name" -o tsv)
+URL=$(azd env get-value APP_URL)
+
+# 1. Container is running, not on the placeholder image
+az containerapp show -g "$RG" -n "$APP" \
+  --query "{state:properties.runningStatus, image:properties.template.containers[0].image}" -o table
+
+# 2. UI returns 200
+curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "$URL/"
+
+# 3. Tail console logs (after you click around in the UI)
+az containerapp logs show -g "$RG" -n "$APP" --type console --tail 50
+```
+
+### Multi-tenant note
+
+If you work across multiple Azure tenants and want this deploy strictly
+isolated (recommended), use a per-tenant config dir for both `az` and
+`azd`:
+
+```bash
+export AZURE_CONFIG_DIR=$HOME/.azure-tenants/<tenant-nick>
+export AZD_CONFIG_DIR=$HOME/.azd-tenants/<tenant-nick>
+az login --tenant <tenant-id>
+azd auth login --tenant-id <tenant-id>
+az account set --subscription <sub-id>
+az account show --query "{name:name,id:id,tenant:tenantId}" -o table  # gate
+azd up
+```
+
+The repo never reads tenant or subscription identifiers — everything
+flows through `azd env`. Keep that contract: don't commit your
+`.azure/` directory (it's gitignored).
+
+### Tear down
+
+```bash
+azd down --purge --force
+```
+
+This deletes the workload RG. Your Foundry account is left untouched
+(it lives in its own RG and was never owned by this deploy).
+
 ## Resources
 
 - [Voice Live overview](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live)
