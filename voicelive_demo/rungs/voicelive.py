@@ -33,7 +33,9 @@ def make_session(shared: SharedState) -> dict:
         "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
         "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
         "input_audio_transcription": {
-            "model": "azure-fast-transcription",
+            "model": shared.extra.get(
+                "input_transcription_model", "azure-fast-transcription"
+            ),
             "language": shared.locale,
         },
     }
@@ -43,7 +45,7 @@ def make_session(shared: SharedState) -> dict:
 async def connect_factory(*, model: str | None = None):
     """The per-rung diff. Same SDK call shape for all three rungs."""
     settings = get_settings()
-    actual_model = model or settings.azure_deployment_name
+    actual_model = model or settings.azure_voice_live_model
     client = AsyncAzureOpenAI(
         azure_endpoint=settings.azure_endpoint,
         api_version=settings.api_version_voicelive,

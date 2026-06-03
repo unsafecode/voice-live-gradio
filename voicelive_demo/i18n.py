@@ -67,6 +67,37 @@ REALTIME_VOICE_NAMES: frozenset[str] = frozenset(
     name for (_label, name, _vtype) in REALTIME_VOICE_OPTIONS
 )
 
+# Voice Live cascade + native-audio model picker.
+#
+# Per Microsoft Learn (Azure AI Foundry Voice Live, fetched 2026-06-03), the
+# pre-deployed managed model catalog on the Voice Live endpoint includes
+# GPT-5.x cascade models (STT → LLM → TTS) and `gpt-realtime-*` native-audio
+# SKUs. The customer just passes `?model=<name>` on the Voice Live WS URL —
+# no Foundry deployment of their own is needed for anything in this list.
+#
+# Cascade-only on purpose: the Realtime rung (rung 1) requires a realtime
+# SKU and has its own deployment-name field, and the Agent rung (rung 3)
+# inherits the model from the Foundry agent. Only Voice Live exposes this
+# free pick of any model in the catalog.
+#
+# Order is the order shown to the user. `gpt-5` is the default because (a)
+# it matches what the customer's own production stack uses for the same
+# scenario, (b) it's stable / GA, (c) it's the lowest-latency cascade.
+VOICELIVE_MODELS: list[tuple[str, str]] = [
+    ("GPT-5 (cascade, recommended)",           "gpt-5"),
+    ("GPT-5.4 (newest cascade)",               "gpt-5.4"),
+    ("GPT-5.3 Chat (dialogue-tuned)",          "gpt-5.3-chat"),
+    ("GPT-5 Mini (lower cost cascade)",        "gpt-5-mini"),
+    ("GPT-Realtime 1.5 (native audio, lowest latency)", "gpt-realtime-1.5"),
+    ("GPT-Realtime Mini (native audio)",       "gpt-realtime-mini"),
+]
+
+DEFAULT_VOICELIVE_MODEL: str = "gpt-5"
+
+VOICELIVE_MODEL_NAMES: frozenset[str] = frozenset(
+    name for (_label, name) in VOICELIVE_MODELS
+)
+
 # Whisper / azure-fast-transcription both accept ISO 639-1 here.
 TRANSCRIPTION_LANGUAGE: dict[str, str] = {
     "en": "en",

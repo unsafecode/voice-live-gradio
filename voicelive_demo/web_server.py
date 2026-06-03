@@ -37,11 +37,15 @@ from voicelive_demo.config import Mode, get_settings
 from voicelive_demo.handler import SharedState
 from voicelive_demo.i18n import (
     DEFAULT_VOICE,
+    DEFAULT_VOICELIVE_MODEL,
     LOCALES,
     REALTIME_DEFAULT_VOICE,
     REALTIME_VOICE_OPTIONS,
     VOICE_OPTIONS,
+    VOICELIVE_MODEL_NAMES,
+    VOICELIVE_MODELS,
 )
+from voicelive_demo.presets import DEFAULT_PRESET, PRESETS, apply_preset
 from voicelive_demo.rungs import agent as agent_rung
 from voicelive_demo.rungs import realtime as realtime_rung
 from voicelive_demo.rungs import voicelive as voicelive_rung
@@ -100,6 +104,31 @@ def create_app() -> FastAPI:
             "default_openai_voice": {
                 "name": REALTIME_DEFAULT_VOICE[0], "type": REALTIME_DEFAULT_VOICE[1],
             },
+            # Voice Live cascade + native-audio model picker. Cascade-only
+            # by default; realtime SKUs included for the "lowest latency"
+            # escape hatch. Hidden in the UI for Realtime / Agent rungs.
+            "voicelive_models": [{"label": lbl, "name": n} for (lbl, n) in VOICELIVE_MODELS],
+            "default_voicelive_model": s.azure_voice_live_model or DEFAULT_VOICELIVE_MODEL,
+            # One-click presets — locale + voice + model + instructions bundled.
+            "presets": [
+                {
+                    "key": p.key,
+                    "label": p.label,
+                    "description": p.description,
+                    "forces_voice_live_rung": p.forces_voice_live_rung,
+                    # Surface the UI-mirrorable overrides so the browser can
+                    # update its radios + selects before the user hits
+                    # Connect. The server still re-applies the bundle from
+                    # PRESETS server-side, so the browser values are only a
+                    # display courtesy.
+                    "locale": p.locale,
+                    "voice": p.voice,
+                    "voice_type": p.voice_type,
+                    "model": p.model,
+                }
+                for p in PRESETS.values()
+            ],
+            "default_preset": DEFAULT_PRESET,
         }
 
     @app.websocket("/ws/{rung}")
@@ -134,13 +163,38 @@ def create_app() -> FastAPI:
                     instr = cfg.get("instructions")
                     if instr:
                         shared.instructions = instr
+                    # Voice Live cascade-or-native model pick. Validate
+                    # against the server-side allow-list — the wire format
+                    # is browser-controlled so a forged frame should not
+                    # be able to hit arbitrary Foundry models.
+                    requested_model = (cfg.get("model") or "").strip()
+                    if requested_model:
+                        if requested_model in VOICELIVE_MODEL_NAMES:
+                            shared.model = requested_model
+                        else:
+                            logger.warning(
+                                "[%s] rejected unknown model %r; falling back to default",
+                                rung, requested_model,
+                            )
+                    # Preset overrides win on purpose: the user explicitly
+                    # asked for the bundle. Applied AFTER per-field overrides
+                    # so a forgotten "I customised the voice last time"
+                    # doesn't silently override a fresh preset choice.
+                    preset_key = (cfg.get("preset") or "").strip()
+                    if preset_key and preset_key in PRESETS:
+                        apply_preset(preset_key, shared)
             except json.JSONDecodeError:
                 logger.warning("bad initial JSON; ignoring")
 
         await _send_json(websocket, {"type": "status", "status": "connecting"})
 
         try:
-            async with connect_factory() as conn:
+            # Voice Live is the only rung where the WS URL's `?model=`
+            # query is meaningful — Realtime uses a deployment name from
+            # env, Agent inherits the model from the Foundry agent. Only
+            # forward shared.model when the rung can act on it.
+            connect_kwargs = {"model": shared.model} if rung == "voicelive" and shared.model else {}
+            async with connect_factory(**connect_kwargs) as conn:
                 session = make_session(shared)
                 await conn.session.update(session=session)
                 logger.info("[%s] session.update sent", rung)

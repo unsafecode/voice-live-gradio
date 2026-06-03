@@ -167,6 +167,11 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.voice-row[hidden],
+.hint[hidden] {
+  display: none;
+}
+
 .voice-row label {
   font-weight: 600;
 }

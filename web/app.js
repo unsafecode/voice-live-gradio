@@ -6,9 +6,13 @@
 const SAMPLE_RATE = 24000;
 
 const els = {
+  presets: document.getElementById("presets"),
   rungs: document.getElementById("rungs"),
   locales: document.getElementById("locales"),
   voice: document.getElementById("voice"),
+  modelRow: document.getElementById("modelRow"),
+  modelHint: document.getElementById("modelHint"),
+  model: document.getElementById("model"),
   connect: document.getElementById("connectBtn"),
   disconnect: document.getElementById("disconnectBtn"),
   status: document.getElementById("status"),
@@ -38,6 +42,10 @@ const state = {
   // Track which locale generated the current instructions textarea content
   // so a language switch can refresh it without nuking user edits.
   instructionsLocale: null,
+  // Which preset is currently applied. Cleared to "default" the moment
+  // the user manually touches voice / locale / model / instructions so
+  // the radio reflects reality.
+  activePreset: "default",
 };
 
 function setStatus(status) {
@@ -66,6 +74,29 @@ async function loadConfig() {
   return res.json();
 }
 
+function buildPresetRadios(presets, defaultPreset) {
+  els.presets.innerHTML = "<legend>Preset</legend>";
+  presets.forEach((p) => {
+    const id = `preset-${p.key}`;
+    const label = document.createElement("label");
+    label.setAttribute("for", id);
+    label.title = p.description || "";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "preset";
+    input.id = id;
+    input.value = p.key;
+    if (p.key === defaultPreset) input.checked = true;
+    input.addEventListener("change", () => applyPreset(p.key));
+    const span = document.createElement("span");
+    span.textContent = p.label;
+    label.appendChild(input);
+    label.appendChild(span);
+    els.presets.appendChild(label);
+  });
+  els.presets.disabled = false;
+}
+
 function buildRungRadios(rungs, defaultRung) {
   els.rungs.innerHTML = "<legend>Rung</legend>";
   rungs.forEach((rung) => {
@@ -78,7 +109,10 @@ function buildRungRadios(rungs, defaultRung) {
     input.id = id;
     input.value = rung;
     if (rung === defaultRung) input.checked = true;
-    input.addEventListener("change", refreshVoiceOptions);
+    input.addEventListener("change", () => {
+      refreshVoiceOptions();
+      refreshModelVisibility();
+    });
     const span = document.createElement("span");
     span.textContent = RUNG_LABELS[rung] ?? rung;
     label.appendChild(input);
@@ -101,6 +135,7 @@ function buildLocaleRadios(locales, defaultLocale) {
     input.value = code;
     if (code === defaultLocale) input.checked = true;
     input.addEventListener("change", () => {
+      markPresetCustomised();
       refreshVoiceOptions();
       refreshInstructions();
     });
@@ -113,12 +148,33 @@ function buildLocaleRadios(locales, defaultLocale) {
   els.locales.disabled = false;
 }
 
+function buildModelOptions(models, defaultModel) {
+  els.model.innerHTML = "";
+  models.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m.name;
+    opt.textContent = m.label;
+    if (m.name === defaultModel) opt.selected = true;
+    els.model.appendChild(opt);
+  });
+  els.model.disabled = false;
+  els.model.addEventListener("change", markPresetCustomised);
+}
+
+function selectedPreset() {
+  return els.presets.querySelector('input[name="preset"]:checked')?.value ?? "default";
+}
+
 function selectedRung() {
   return els.rungs.querySelector('input[name="rung"]:checked')?.value ?? "voicelive";
 }
 
 function selectedLocale() {
   return els.locales.querySelector('input[name="locale"]:checked')?.value ?? "en";
+}
+
+function selectedModel() {
+  return els.model.value || state.cfg?.default_voicelive_model || "";
 }
 
 function voicesForCurrent() {
@@ -147,6 +203,17 @@ function refreshVoiceOptions() {
     els.voice.appendChild(opt);
   });
   els.voice.disabled = false;
+  // Re-bind every refresh — innerHTML reset blew away previous listeners.
+  els.voice.addEventListener("change", markPresetCustomised, { once: true });
+}
+
+function refreshModelVisibility() {
+  // Model picker is meaningful only on the Voice Live rung. Realtime is
+  // pinned to its `gpt-realtime-*` deployment (env-controlled), and the
+  // Agent rung inherits the model from the Foundry agent definition.
+  const isVoiceLive = selectedRung() === "voicelive";
+  els.modelRow.hidden = !isVoiceLive;
+  els.modelHint.hidden = !isVoiceLive;
 }
 
 function refreshInstructions() {
@@ -176,6 +243,72 @@ function selectedVoicePayload() {
     return { voice: defaultVoice.name, voice_type: defaultVoice.type };
   }
   return { voice: name, voice_type: type };
+}
+
+// Apply a server-defined preset bundle. The server-side `apply_preset`
+// is authoritative — the browser only mirrors the obvious UI fields so
+// the user can SEE what changed before they hit Connect. The actual
+// instructions/locale/model passed to Voice Live are decided server-side
+// from the `preset` field in the WS handshake.
+function applyPreset(presetKey) {
+  state.activePreset = presetKey;
+  const preset = (state.cfg?.presets ?? []).find((p) => p.key === presetKey);
+  if (!preset) return;
+
+  if (preset.forces_voice_live_rung) {
+    const vl = els.rungs.querySelector('input[name="rung"][value="voicelive"]');
+    if (vl && !vl.checked) vl.checked = true;
+  }
+
+  if (preset.locale) {
+    const loc = els.locales.querySelector(`input[name="locale"][value="${preset.locale}"]`);
+    if (loc) loc.checked = true;
+  }
+
+  // Refresh voice list now that rung + locale may have changed.
+  refreshVoiceOptions();
+  refreshModelVisibility();
+
+  if (preset.voice) {
+    const voiceVal = `${preset.voice}|${preset.voice_type || "azure-standard"}`;
+    if ([...els.voice.options].some((o) => o.value === voiceVal)) {
+      els.voice.value = voiceVal;
+    }
+  }
+
+  if (preset.model && [...els.model.options].some((o) => o.value === preset.model)) {
+    els.model.value = preset.model;
+  }
+
+  // The server's `presets.py` owns the prompt — we just clear the textarea
+  // so stale English copy doesn't mislead the user before Connect.
+  if (presetKey !== "default") {
+    els.instructions.value = "";
+    els.instructions.placeholder = `Using preset “${preset.label}” — server-defined prompt will be applied on Connect.`;
+    state.instructionsLocale = null;
+  } else {
+    els.instructions.placeholder = "System prompt...";
+    refreshInstructions();
+  }
+}
+
+// Called whenever the user manually edits a field controlled by a preset.
+// Snaps the preset back to "default" so we don't lie about an active bundle.
+function markPresetCustomised() {
+  if (state.activePreset === "default") return;
+  state.activePreset = "default";
+  const def = els.presets.querySelector('input[name="preset"][value="default"]');
+  if (def) def.checked = true;
+  els.instructions.placeholder = "System prompt...";
+}
+
+function setControlsLocked(locked) {
+  els.presets.disabled = locked;
+  els.rungs.disabled = locked;
+  els.locales.disabled = locked;
+  els.voice.disabled = locked;
+  els.model.disabled = locked;
+  els.instructions.disabled = locked;
 }
 
 async function ensureAudio() {
@@ -242,7 +375,12 @@ async function connect() {
 
   const rung = selectedRung();
   const locale = selectedLocale();
+  const preset = selectedPreset();
   const { voice, voice_type } = selectedVoicePayload();
+  // Model field is meaningful for Voice Live only; sent unconditionally
+  // (server only acts on it for the Voice Live rung) so the browser
+  // stays dumb about per-rung wiring.
+  const model = selectedModel();
 
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
   const url = `${wsProto}://${location.host}/ws/${rung}`;
@@ -256,15 +394,21 @@ async function connect() {
       voice,
       voice_type,
       locale,
-      instructions: els.instructions.value.trim() || undefined,
+      model: model || undefined,
+      preset: preset || undefined,
+      // Don't send our local English/Italian default — when a preset is
+      // active the server owns the full prompt, and when it isn't, an
+      // empty `instructions` lets the server keep its SharedState default.
+      instructions:
+        preset && preset !== "default"
+          ? undefined
+          : els.instructions.value.trim() || undefined,
     }));
     try {
       await startMic();
       state.connected = true;
       els.disconnect.disabled = false;
-      els.rungs.disabled = true;
-      els.locales.disabled = true;
-      els.voice.disabled = true;
+      setControlsLocked(true);
     } catch (err) {
       console.error("mic start failed", err);
       setStatus("error");
@@ -308,9 +452,7 @@ async function connect() {
     stopMic();
     els.connect.disabled = false;
     els.disconnect.disabled = true;
-    els.rungs.disabled = false;
-    els.locales.disabled = false;
-    els.voice.disabled = false;
+    setControlsLocked(false);
     setStatus("offline");
   };
 }
@@ -327,9 +469,12 @@ function disconnect() {
     const cfg = await loadConfig();
     state.cfg = cfg;
     const browserLocale = detectBrowserLocale(cfg.locales);
+    buildPresetRadios(cfg.presets ?? [], cfg.default_preset ?? "default");
     buildRungRadios(cfg.rungs, cfg.default_rung);
     buildLocaleRadios(cfg.locales, browserLocale);
+    buildModelOptions(cfg.voicelive_models ?? [], cfg.default_voicelive_model ?? "");
     refreshVoiceOptions();
+    refreshModelVisibility();
     refreshInstructions();
     els.connect.disabled = false;
   } catch (err) {

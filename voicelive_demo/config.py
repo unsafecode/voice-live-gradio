@@ -48,13 +48,31 @@ class Settings(BaseSettings):
     azure_deployment_name: str = Field(
         "gpt-realtime-1.5",
         alias="AZURE_OPENAI_DEPLOYMENT_NAME",
-        description="Name of your realtime model deployment in the Foundry resource",
+        description=(
+            "Name of your realtime model deployment in the Foundry resource. "
+            "Used by the Realtime rung (rung 1) — must be a `gpt-realtime-*` "
+            "SKU because the Azure OpenAI Realtime endpoint does not accept "
+            "cascade models like gpt-5."
+        ),
     )
 
     azure_voice_live_endpoint: str = Field(
         ...,
         alias="AZURE_VOICELIVE_ENDPOINT",
         description="wss://<your-foundry-resource>.services.ai.azure.com/voice-live",
+    )
+    azure_voice_live_model: str = Field(
+        "gpt-5",
+        alias="AZURE_VOICE_LIVE_MODEL",
+        description=(
+            "Default model the Voice Live rung (rung 2) requests via "
+            "`?model=<name>` on the Voice Live WS URL. Voice Live hosts a "
+            "managed allow-list (gpt-5, gpt-5.4, gpt-5-mini, gpt-realtime-1.5, "
+            "…) — no Foundry deployment of your own is needed for anything "
+            "in that catalog. Default `gpt-5` matches the cascade model the "
+            "customer's production stack uses for the same scenario; swap "
+            "to `gpt-realtime-1.5` for lowest-latency native audio."
+        ),
     )
 
     agent_project_name: Optional[str] = Field(None, alias="AGENT_PROJECT_NAME")

@@ -17,6 +17,10 @@
     </header>
 
     <section class="controls">
+      <fieldset class="rungs" id="presets" disabled>
+        <legend>Preset</legend>
+      </fieldset>
+
       <fieldset class="rungs" id="rungs" disabled>
         <legend>Rung</legend>
       </fieldset>
@@ -29,6 +33,15 @@
         <label for="voice">Voice</label>
         <select id="voice" disabled></select>
       </div>
+
+      <div class="voice-row" id="modelRow" hidden>
+        <label for="model">Model</label>
+        <select id="model" disabled></select>
+      </div>
+      <p class="hint" id="modelHint" hidden>
+        Cascade models (gpt-5+) trade higher latency for stronger reasoning. Pick
+        <code>gpt-realtime-*</code> for lowest-latency native audio.
+      </p>
 
       <div class="actions">
         <button id="connectBtn" type="button" disabled>Connect</button>

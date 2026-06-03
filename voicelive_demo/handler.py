@@ -49,6 +49,7 @@ class SharedState:
     locale: str = "en"
     voice: str = "en-US-Ava:DragonHDLatestNeural"
     voice_type: str = "azure-standard"
+    model: str = ""
     instructions: str = (
         "You are a friendly, concise voice assistant. Keep replies short — under 2 sentences "
         "unless the user explicitly asks for more. Speak naturally."
