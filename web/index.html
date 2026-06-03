@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Live — switchable rung demo</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Voice Live <span class="muted">— switchable rung demo</span></h1>
+      <p class="lede">
+        Three rungs, one UI. Pick a rung, hit <strong>Connect</strong>, and start talking.
+        This is the WebSocket-only deployable variant — no WebRTC, no TURN, no Gradio.
+      </p>
+    </header>
+
+    <section class="controls">
+      <fieldset class="rungs" id="rungs" disabled>
+        <legend>Rung</legend>
+      </fieldset>
+
+      <div class="actions">
+        <button id="connectBtn" type="button" disabled>Connect</button>
+        <button id="disconnectBtn" type="button" disabled>Disconnect</button>
+        <span class="status" id="status" data-state="offline">offline</span>
+      </div>
+
+      <details class="advanced">
+        <summary>System instructions (rungs 1 &amp; 2)</summary>
+        <textarea id="instructions" rows="4" placeholder="System prompt..."
+>You are a friendly, concise voice assistant. Keep replies short — under 2 sentences unless the user explicitly asks for more. Speak naturally.</textarea>
+        <p class="hint">Rung 3 ignores this — the Foundry Agent owns its own instructions.</p>
+      </details>
+    </section>
+
+    <section class="transcript-wrap">
+      <h2>Transcript</h2>
+      <ol id="transcript" aria-live="polite"></ol>
+    </section>
+
+    <footer>
+      <p>
+        <a href="https://github.com/unsafecode/voice-live-gradio" target="_blank" rel="noreferrer">
+          Source on GitHub
+        </a>
+        — see <code>docs/PEER_SETUP.md</code> for the local Gradio variant
+        and <code>docs/AGENT_SETUP.md</code> for rung 3.
+      </p>
+    </footer>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

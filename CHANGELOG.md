@@ -1,5 +1,34 @@
 ## Voice Live Gradio Demo — Changelog
 
+<a name="0.4.0"></a>
+# 0.4.0 (2026-06-04)
+
+*Features*
+* **Deployable web shell** — new `app_web.py` + `voicelive_demo/web_server.py`
+  ship a FastAPI + vanilla-JS + WebSocket variant that streams raw
+  24 kHz PCM16 frames over WSS. Drops the Gradio + FastRTC + WebRTC
+  stack so the demo can deploy on any L7-only container platform
+  (Azure Container Apps, App Service, Cloud Run) without TURN.
+* **`azd up` template** — `azure.yaml` + `infra/` ship Bicep for the
+  full footprint: UAMI, ACR, Log Analytics, ACA env + app, AcrPull,
+  Cognitive Services User + Azure AI User on a BYO Foundry resource.
+  RBAC pre-empts the AcrPull propagation race via `dependsOn: [rbac]`.
+  All values are sourced from `azd env set …` — no internal resource
+  names hardcoded in tracked files.
+* **`docs/AZURE_DEPLOY.md`** — peer-facing one-page walkthrough with
+  tenant-isolation guidance, env-var checklist, verify gate, and the
+  browser-support matrix.
+
+*Notes*
+* The Gradio + FastRTC shell (`app.py`, `app_demo.py`, `app_*.py`)
+  is unchanged — use it for local-only development and screen-share
+  demos where TURN is a non-issue.
+* The web shell intentionally re-imports `voicelive_demo.handler` so
+  it shares the same `SharedState` dataclass + event-switching logic
+  as the Gradio shell. This keeps the rungs in lockstep across both
+  front-ends; the trade-off is a larger container image because
+  Gradio + FastRTC + NumPy still pull in transitively.
+
 <a name="0.3.0"></a>
 # 0.3.0 (2026-05-27)
 

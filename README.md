@@ -188,6 +188,24 @@ each shell actually runs.
 The Agent rung is auto-disabled in the unified switcher if `AGENT_ID`
 and `AGENT_PROJECT_NAME` aren't set in `.env`.
 
+### Deploy to Azure (no WebRTC, no TURN)
+
+Want to share a public URL with peers? The Gradio + FastRTC variant
+needs UDP + a TURN server, which doesn't deploy cleanly on most
+managed container platforms (ACA, App Service, Cloud Run). For that
+use case the repo ships a second front-end — a vanilla-JS + FastAPI
++ WebSocket shell that streams raw PCM16 frames over a regular WSS
+connection. Same three rungs, same `connect_factory` / `make_session`
+contracts. Single command:
+
+```bash
+azd up
+```
+
+Full walkthrough in [`docs/AZURE_DEPLOY.md`](docs/AZURE_DEPLOY.md).
+Local-only? Use `uv run app.py` as before — the Gradio shell still
+runs, with WebRTC + FastRTC, on `localhost`.
+
 ## What's new in the UI
 
 - **Header chip** — at-a-glance MODE / MODEL / ENDPOINT.
